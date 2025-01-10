@@ -3,7 +3,7 @@
 #include  <stdbool.h>
 #include  <string.h>
 #define Total_block 100
-#define Facteur_block 3
+#define Facteur_block 4
 
     typedef struct {
         char name[20];
@@ -32,7 +32,7 @@
         int Taille_du_fichier;
         int nb_enregistrement;
         int adresse_firstblock;
-        int org_globale; // Mode d'organisation globale (0: contigu, 1: chaîné
+        int org_globale; // Mode d'organisation globale (0: contigu, 1: chaï¿½nï¿½
         int org_interne;// Mode d'organisation interne (0: non, 1: oui)
         int etat;//(1: existe , 0: existe pas)
     }mt;
@@ -67,70 +67,70 @@ void returnetat(Tallocation t ,int nm_bloc){
 
 
 void initialiserMs(Ms *ms, const char *nomFichier) {
-    // Vérifie si le pointeur Ms est valide
+    // Vï¿½rifie si le pointeur Ms est valide
     if (ms == NULL) {
         fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
         return;
     }
 
     // Initialisation du fichier
-    ms->Ms = fopen(nomFichier, "wb+"); // Ouvre le fichier en lecture/écriture binaire
+    ms->Ms = fopen(nomFichier, "wb+"); // Ouvre le fichier en lecture/ï¿½criture binaire
     if (ms->Ms == NULL) {
         fprintf(stderr, "Erreur : Impossible d'ouvrir le fichier %s.\n", nomFichier);
         exit(EXIT_FAILURE);
     }
 
-    // Initialisation des blocs en mémoire
-    memset(ms->T, 0, sizeof(ms->T)); // Initialise tous les blocs à 0
+    // Initialisation des blocs en mï¿½moire
+    memset(ms->T, 0, sizeof(ms->T)); // Initialise tous les blocs ï¿½ 0
 
     // Initialisation des autres champs
-    ms->nm_bloc = 0; // Aucun bloc utilisé au départ
-    ms->occupied = false; // Indique que la mémoire secondaire est vide
+    ms->nm_bloc = 0; // Aucun bloc utilisï¿½ au dï¿½part
+    ms->occupied = false; // Indique que la mï¿½moire secondaire est vide
 
-    printf("Initialisation de la structure Ms terminée.\n");
+    printf("Initialisation de la structure Ms terminï¿½e.\n");
 }
 
 
 void modifierTableAllocation(Ms *ms, int blocIndex, bool occupe) {
-    // Vérifie si le pointeur Ms est valide
+    // Vï¿½rifie si le pointeur Ms est valide
     if (ms == NULL) {
         fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
         return;
     }
 
-    // Vérifie si l'indice du bloc est valide
+    // Vï¿½rifie si l'indice du bloc est valide
     if (blocIndex < 0 || blocIndex >= Total_block) {
         fprintf(stderr, "Erreur : Indice de bloc invalide (%d).\n", blocIndex);
         return;
     }
 
-    // La table d'allocation est stockée dans les premiers Total_block octets de T
+    // La table d'allocation est stockï¿½e dans les premiers Total_block octets de T
     char *tableAllocation = ms->T;
 
-    // Met à jour l'état du bloc dans la table d'allocation
+    // Met ï¿½ jour l'ï¿½tat du bloc dans la table d'allocation
     tableAllocation[blocIndex] = occupe ? 1 : 0;
 
-    // Marque le fichier comme modifié
+    // Marque le fichier comme modifiï¿½
     ms->occupied = true;
 
-    printf("Bloc %d %s dans la table d'allocation.\n", blocIndex, occupe ? "occupé" : "libéré");
+    printf("Bloc %d %s dans la table d'allocation.\n", blocIndex, occupe ? "occupï¿½" : "libï¿½rï¿½");
 }
 
 void viderMs(Ms *ms) {
-    // Vérifie si le pointeur Ms est valide
+    // Vï¿½rifie si le pointeur Ms est valide
     if (ms == NULL) {
         fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
         return;
     }
 
-    // Remplit la mémoire secondaire avec des zéros
+    // Remplit la mï¿½moire secondaire avec des zï¿½ros
     memset(ms->T, 0, sizeof(ms->T));
 
-    // Réinitialise les champs
+    // Rï¿½initialise les champs
     ms->nm_bloc = 0;
     ms->occupied = false;
 
-    printf("Mémoire secondaire vidée avec succès.\n");
+    printf("Mï¿½moire secondaire vidï¿½e avec succï¿½s.\n");
 }
 void chargerDepuisFichier(Ms *ms, const char *nom_fichier) {
     if (ms == NULL || nom_fichier == NULL) {
@@ -152,10 +152,10 @@ void chargerDepuisFichier(Ms *ms, const char *nom_fichier) {
         // Ajouter l'enregistrement au buffer
         buffer.enregisrement[buffer.nb_enregistrement++] = temp;
 
-        // Si le buffer est plein, on le sauvegarde dans la mémoire secondaire
+        // Si le buffer est plein, on le sauvegarde dans la mï¿½moire secondaire
         if (buffer.nb_enregistrement == 5) {
             if (ms->nm_bloc >= Total_block) {
-                fprintf(stderr, "Erreur : Pas assez d'espace dans la mémoire secondaire.\n");
+                fprintf(stderr, "Erreur : Pas assez d'espace dans la mï¿½moire secondaire.\n");
                 fclose(f);
                 return;
             }
@@ -164,14 +164,14 @@ void chargerDepuisFichier(Ms *ms, const char *nom_fichier) {
             modifierTableAllocation(ms, ms->nm_bloc, true);
             ms->nm_bloc++;
 
-            buffer.nb_enregistrement = 0; // Réinitialiser le buffer
+            buffer.nb_enregistrement = 0; // Rï¿½initialiser le buffer
         }
     }
 
     // Sauvegarder le reste du buffer (si non vide)
     if (buffer.nb_enregistrement> 0) {
         if (ms->nm_bloc >= Total_block) {
-            fprintf(stderr, "Erreur : Pas assez d'espace dans la mémoire secondaire.\n");
+            fprintf(stderr, "Erreur : Pas assez d'espace dans la mï¿½moire secondaire.\n");
             fclose(f);
             return;
         }
@@ -182,12 +182,12 @@ void chargerDepuisFichier(Ms *ms, const char *nom_fichier) {
     }
 
     fclose(f);
-    printf("Fichier %s chargé dans la mémoire secondaire.\n", nom_fichier);
+    printf("Fichier %s chargï¿½ dans la mï¿½moire secondaire.\n", nom_fichier);
 }
 void chargerDansBuffer(Ms *ms) {
     Bloc buffer;
     produit temp;
-    buffer.nb_enregistrement = 0;  // Réinitialiser le nombre d'enregistrements
+    buffer.nb_enregistrement = 0;  // Rï¿½initialiser le nombre d'enregistrements
 
     while (buffer.nb_enregistrement < 3) {
         printf("Entrez le nom du produit : ");
@@ -203,19 +203,19 @@ void chargerDansBuffer(Ms *ms) {
         // Ajouter le produit au buffer
         buffer.enregisrement[buffer.nb_enregistrement++] = temp;
     }
-        // Si le buffer est plein, le sauvegarder dans la mémoire secondaire
+        // Si le buffer est plein, le sauvegarder dans la mï¿½moire secondaire
         if (buffer.nb_enregistrement == 3) {
             if (ms->nm_bloc >= Total_block) {
-                fprintf(stderr, "Erreur : Pas assez d'espace dans la mémoire secondaire.\n");
+                fprintf(stderr, "Erreur : Pas assez d'espace dans la mï¿½moire secondaire.\n");
                 return;
             }
 
-            // Sauvegarder le buffer dans la mémoire secondaire
+            // Sauvegarder le buffer dans la mï¿½moire secondaire
             memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-            modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occupé
-            ms->nm_bloc++; // Incrémenter le nombre de blocs
+            modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occupï¿½
+            ms->nm_bloc++; // Incrï¿½menter le nombre de blocs
 
-            // Réinitialiser le buffer
+            // Rï¿½initialiser le buffer
             buffer.nb_enregistrement = 0;
         }
 
@@ -223,15 +223,15 @@ void chargerDansBuffer(Ms *ms) {
     // Sauvegarder le reste du buffer (s'il reste des produits)
     if (buffer.nb_enregistrement > 0) {
         if (ms->nm_bloc >= Total_block) {
-            fprintf(stderr, "Erreur : Pas assez d'espace dans la mémoire secondaire.\n");
+            fprintf(stderr, "Erreur : Pas assez d'espace dans la mï¿½moire secondaire.\n");
             return;
         }
         memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-        modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occupé
-        ms->nm_bloc++; // Incrémenter le nombre de blocs
+        modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occupï¿½
+        ms->nm_bloc++; // Incrï¿½menter le nombre de blocs
     }
 
-    printf("Les données ont été chargées dans la mémoire secondaire.\n");
+    printf("Les donnï¿½es ont ï¿½tï¿½ chargï¿½es dans la mï¿½moire secondaire.\n");
 }
 void chargerMs(Ms *ms, const char *nomFichier) {
     if (ms == NULL || nomFichier == NULL) {
@@ -246,34 +246,34 @@ void chargerMs(Ms *ms, const char *nomFichier) {
         return;
     }
 
-    // Réinitialiser l'état de la mémoire secondaire
-    memset(ms->T, 0, sizeof(ms->T));  // Remplir les blocs avec des zéros
-    ms->nm_bloc = 0;  // Aucun bloc utilisé au début
-    ms->occupied = false;  // Initialiser l'occupation à faux
+    // Rï¿½initialiser l'ï¿½tat de la mï¿½moire secondaire
+    memset(ms->T, 0, sizeof(ms->T));  // Remplir les blocs avec des zï¿½ros
+    ms->nm_bloc = 0;  // Aucun bloc utilisï¿½ au dï¿½but
+    ms->occupied = false;  // Initialiser l'occupation ï¿½ faux
 
     Bloc buffer;  // Buffer pour lire un bloc
     int blocIndex = 0;  // Indice pour le bloc actuel
     while (fread(&buffer, sizeof(Bloc), 1, ms->Ms) == 1) {
-        // Si le bloc est valide, le charger dans la mémoire secondaire
+        // Si le bloc est valide, le charger dans la mï¿½moire secondaire
         if (buffer.nb_enregistrement > 0) {
             memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
 
-            // Mettre à jour la table d'allocation
+            // Mettre ï¿½ jour la table d'allocation
             modifierTableAllocation(ms, ms->nm_bloc, true);
 
-            ms->nm_bloc++;  // Incrémenter le compteur de blocs utilisés
+            ms->nm_bloc++;  // Incrï¿½menter le compteur de blocs utilisï¿½s
         }
     }
 
     fclose(ms->Ms);  // Fermer le fichier
-    printf("Mémoire secondaire chargée depuis le fichier %s.\n", nomFichier);
+    printf("Mï¿½moire secondaire chargï¿½e depuis le fichier %s.\n", nomFichier);
 }
 void afficherElementsMs(Ms *ms) {
-    printf("Affichage des éléments dans la mémoire secondaire :\n");
+    printf("Affichage des ï¿½lï¿½ments dans la mï¿½moire secondaire :\n");
 
-    // Parcourir tous les blocs dans la mémoire secondaire
+    // Parcourir tous les blocs dans la mï¿½moire secondaire
     for (int i = 0; i < ms->nm_bloc; i++) {
-        // Lire le bloc courant depuis la mémoire secondaire
+        // Lire le bloc courant depuis la mï¿½moire secondaire
         Bloc bloc;
         memcpy(&bloc, ms->T + i * sizeof(Bloc), sizeof(Bloc));
 
@@ -281,9 +281,9 @@ void afficherElementsMs(Ms *ms) {
 
         // Parcourir les enregistrements dans le bloc
         for (int j = 0; j < bloc.nb_enregistrement; j++) {
-            produit temp = bloc.enregisrement[j]; // Accéder à l'enregistrement j
+            produit temp = bloc.enregisrement[j]; // Accï¿½der ï¿½ l'enregistrement j
 
-            // Afficher les détails du produit
+            // Afficher les dï¿½tails du produit
             printf("  Produit %d:\n", j + 1);
             printf("    Nom   : %s\n", temp.name);
             printf("    Prix  : %f\n", temp.price); // Utilisez temp.price[0] pour afficher le prix
@@ -295,11 +295,11 @@ void afficherElementsMs(Ms *ms) {
     #include <stdbool.h>
 #include <string.h>
 
-// Structure pour représenter le résultat de la recherche
+// Structure pour reprï¿½senter le rï¿½sultat de la recherche
 typedef struct {
-    int bloc;     // Numéro du bloc
+    int bloc;     // Numï¿½ro du bloc
     int position; // Position dans le bloc
-    bool trouve;  // Indique si l'enregistrement est trouvé
+    bool trouve;  // Indique si l'enregistrement est trouvï¿½
 } ResultatRecherche;
 
 #include <stdbool.h>
@@ -313,9 +313,9 @@ typedef struct {
 
 // Fonction de recherche utilisant un buffer
 ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, bool globaleChainee, bool interneTriee) {
-    ResultatRecherche resultat = {-1, -1, false}; // Initialisation du résultat
+    ResultatRecherche resultat = {-1, -1, false}; // Initialisation du rï¿½sultat
 
-    // Création d'un buffer pour contenir plusieurs blocs
+    // Crï¿½ation d'un buffer pour contenir plusieurs blocs
     Bloc buffer[3];
 
     int blocCourant = 0;
@@ -333,7 +333,7 @@ ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, bool global
             Bloc *bloc = &buffer[i];
 
             if (interneTriee) {
-                // Recherche binaire dans un bloc trié
+                // Recherche binaire dans un bloc triï¿½
                 int gauche = 0, droite = bloc->nb_enregistrement - 1;
                 while (gauche <= droite) {
                     int milieu = (gauche + droite) / 2;
@@ -349,7 +349,7 @@ ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, bool global
                     }
                 }
             } else {
-                // Recherche linéaire dans un bloc non trié
+                // Recherche linï¿½aire dans un bloc non triï¿½
                 for (int j = 0; j < bloc->nb_enregistrement; j++) {
                     if (bloc->enregisrement[j].id == idRecherche) {
                         resultat.bloc = blocCourant - blocsCharges + i; // Bloc correspondant
@@ -362,13 +362,13 @@ ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, bool global
         }
     }
 
-    // Si aucun résultat n'a été trouvé
+    // Si aucun rï¿½sultat n'a ï¿½tï¿½ trouvï¿½
     printf("Enregistrement avec ID %d introuvable.\n", idRecherche);
     return resultat;
 }
 */
 
-// compactage de la mémoire secondaire
+// compactage de la mï¿½moire secondaire
 
 void compacterMs(Ms *ms, Tallocation *talloc) {
 
@@ -396,7 +396,7 @@ void compacterMs(Ms *ms, Tallocation *talloc) {
 
         // If all blocks are occupied, print a message and exit
         if (i >= Total_block) {
-            printf("Tous les blocs sont occupés\n");
+            printf("Tous les blocs sont occupï¿½s\n");
             return;
         } else {
             // Count the number of consecutive free blocks after DF
@@ -405,7 +405,7 @@ void compacterMs(Ms *ms, Tallocation *talloc) {
             }
             // If there are no more occupied blocks, print a message and exit
             if (i >= Total_block) {
-                printf("Pas d'autre bloc occupé\n");
+                printf("Pas d'autre bloc occupï¿½\n");
                 return;
             } else {
                 FF=i-1; // last free block count
@@ -486,28 +486,28 @@ suppfichier(Ms *ms , Tallocation *talloc , mt *metainfo ){
 int main() {
     Ms ms;
 
-    // Initialiser la mémoire secondaire
+    // Initialiser la mï¿½moire secondaire
     initialiserMs(&ms, "ms.txt");
 
     // Charger des produits dans le buffer
     chargerDansBuffer(&ms);
 
-    // Afficher les éléments de la mémoire secondaire
+    // Afficher les ï¿½lï¿½ments de la mï¿½moire secondaire
     afficherElementsMs(&ms);
 
     // Rechercher un enregistrement par ID
     int idRecherche;
-    printf("Entrez l'ID à rechercher : ");
+    printf("Entrez l'ID ï¿½ rechercher : ");
     scanf("%d", &idRecherche);
 
     // Effectuer la recherche avec buffer
     ResultatRecherche resultat = rechercherParIDAvecBuffer(&ms, idRecherche, false, false);
 
-    // Afficher le résultat
+    // Afficher le rï¿½sultat
     if (resultat.trouve) {
-        printf("Enregistrement trouvé dans le bloc %d, position %d.\n", resultat.bloc, resultat.position);
+        printf("Enregistrement trouvï¿½ dans le bloc %d, position %d.\n", resultat.bloc, resultat.position);
     } else {
-        printf("Enregistrement non trouvé.\n");
+        printf("Enregistrement non trouvï¿½.\n");
     }
 
     return 0;
@@ -595,7 +595,7 @@ int main(){
         scanf(" %20s", p.name);
 
 
-        printf("Entrez l'âge : ");
+        printf("Entrez l'ï¿½ge : ");
         scanf(" %3s", p.age);
 
 
