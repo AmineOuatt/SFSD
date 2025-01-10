@@ -4,6 +4,28 @@
 #include  <string.h>
 #define Total_block 100
 #define Facteur_block 4
+#include <windows.h>
+#include <limits.h>
+
+
+
+typedef struct {
+    int bloc;     // Numéro du bloc
+    int position; // Position dans le bloc
+    bool trouve;  // Indique si l'enregistrement est trouvé
+} ResultatRecherche;
+
+
+void gotoxy(int x, int y) {
+    COORD c;
+    c.X = x;
+    c.Y = y;
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), c);
+}
+void color(int couleurDuTexte, int couleurDeFond) {
+    HANDLE H = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(H, couleurDeFond * 16 + couleurDuTexte);
+}
 
     typedef struct {
         char name[20];
@@ -12,7 +34,7 @@
     }produit;
 
     typedef struct {
-        produit enregisrement[4];
+        produit enregisrement[Facteur_block];
         int nb_enregistrement;
         int ADR;
         int next;
@@ -55,7 +77,6 @@ void updateTabAlloc(Ms *ms , int pos, bool occupied)
     T.T[pos].occupied = occupied;
     memcpy(ms->T , &T , sizeof(Tallocation));
 }
-
 void returnetat(Tallocation t ,int nm_bloc){
     if(t.T[nm_bloc].occupied == true){
         printf("le bloc %d est occuper\n",nm_bloc);
@@ -63,313 +84,837 @@ void returnetat(Tallocation t ,int nm_bloc){
         printf("le bloc %d est libre\n",nm_bloc);
     }
 }
-/*
-
-
-void initialiserMs(Ms *ms, const char *nomFichier) {
-    // V�rifie si le pointeur Ms est valide
-    if (ms == NULL) {
-        fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
-        return;
+void initialisebuffer(Bloc *buffer , int index){
+    buffer->nb_enregistrement=0;
+    buffer->ADR = index;
+    for(int i = 0 ; i<4 ; i++){
+    buffer->enregisrement[i].id = 0;
+    buffer->enregisrement[i].price = 0.0;
+    strcpy(buffer->enregisrement[i].name,"a");
     }
-
-    // Initialisation du fichier
-    ms->Ms = fopen(nomFichier, "wb+"); // Ouvre le fichier en lecture/�criture binaire
-    if (ms->Ms == NULL) {
-        fprintf(stderr, "Erreur : Impossible d'ouvrir le fichier %s.\n", nomFichier);
-        exit(EXIT_FAILURE);
-    }
-
-    // Initialisation des blocs en m�moire
-    memset(ms->T, 0, sizeof(ms->T)); // Initialise tous les blocs � 0
-
-    // Initialisation des autres champs
-    ms->nm_bloc = 0; // Aucun bloc utilis� au d�part
-    ms->occupied = false; // Indique que la m�moire secondaire est vide
-
-    printf("Initialisation de la structure Ms termin�e.\n");
+    buffer->next = -1;
 }
-
-
-void modifierTableAllocation(Ms *ms, int blocIndex, bool occupe) {
-    // V�rifie si le pointeur Ms est valide
-    if (ms == NULL) {
-        fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
-        return;
+void initialiseTallocation(Tallocation T){
+    for(int i = 0 ; i<Total_block ;i++){
+        T.T[i].nm_bloc=i;
+        T.T[i].occupied=false;
     }
-
-    // V�rifie si l'indice du bloc est valide
-    if (blocIndex < 0 || blocIndex >= Total_block) {
-        fprintf(stderr, "Erreur : Indice de bloc invalide (%d).\n", blocIndex);
-        return;
-    }
-
-    // La table d'allocation est stock�e dans les premiers Total_block octets de T
-    char *tableAllocation = ms->T;
-
-    // Met � jour l'�tat du bloc dans la table d'allocation
-    tableAllocation[blocIndex] = occupe ? 1 : 0;
-
-    // Marque le fichier comme modifi�
-    ms->occupied = true;
-
-    printf("Bloc %d %s dans la table d'allocation.\n", blocIndex, occupe ? "occup�" : "lib�r�");
 }
-
-void viderMs(Ms *ms) {
-    // V�rifie si le pointeur Ms est valide
-    if (ms == NULL) {
-        fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
-        return;
-    }
-
-    // Remplit la m�moire secondaire avec des z�ros
-    memset(ms->T, 0, sizeof(ms->T));
-
-    // R�initialise les champs
-    ms->nm_bloc = 0;
-    ms->occupied = false;
-
-    printf("M�moire secondaire vid�e avec succ�s.\n");
+void initialisemeta(mt *meta){
+    meta->adresse_firstblock=-1;
+    meta->etat = 0;
+    meta->nb_enregistrement=-1;
+    strcpy(meta->Nom_du_fichier , "r");
+    meta->org_globale=-1;
+    meta->org_interne =-1;
+    meta->Taille_du_fichier =-1;
 }
-void chargerDepuisFichier(Ms *ms, const char *nom_fichier) {
-    if (ms == NULL || nom_fichier == NULL) {
-        fprintf(stderr, "Erreur : Pointeur invalide.\n");
-        return;
-    }
-
-    FILE *f = fopen(nom_fichier, "a+");
-    if (f == NULL) {
-        fprintf(stderr, "Erreur : Impossible d'ouvrir le fichier %s.\n", nom_fichier);
-        return;
-    }
-
-    Bloc buffer; // Buffer pour stocker un bloc d'enregistrements
-    buffer.nb_enregistrement = 0;
-
-    produit temp;
-    while (fscanf(f, "%19s %2s %9s", temp.name, temp.price, temp.id) == 3) {
-        // Ajouter l'enregistrement au buffer
-        buffer.enregisrement[buffer.nb_enregistrement++] = temp;
-
-        // Si le buffer est plein, on le sauvegarde dans la m�moire secondaire
-        if (buffer.nb_enregistrement == 5) {
-            if (ms->nm_bloc >= Total_block) {
-                fprintf(stderr, "Erreur : Pas assez d'espace dans la m�moire secondaire.\n");
-                fclose(f);
-                return;
-            }
-
-            memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-            modifierTableAllocation(ms, ms->nm_bloc, true);
-            ms->nm_bloc++;
-
-            buffer.nb_enregistrement = 0; // R�initialiser le buffer
-        }
-    }
-
-    // Sauvegarder le reste du buffer (si non vide)
-    if (buffer.nb_enregistrement> 0) {
-        if (ms->nm_bloc >= Total_block) {
-            fprintf(stderr, "Erreur : Pas assez d'espace dans la m�moire secondaire.\n");
-            fclose(f);
-            return;
-        }
-
-        memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-        modifierTableAllocation(ms, ms->nm_bloc, true);
-        ms->nm_bloc++;
-    }
-
-    fclose(f);
-    printf("Fichier %s charg� dans la m�moire secondaire.\n", nom_fichier);
-}
-void chargerDansBuffer(Ms *ms) {
+void initialisems(Ms *ms){
+    Tallocation T;
+    initialiseTallocation(T);
     Bloc buffer;
-    produit temp;
-    buffer.nb_enregistrement = 0;  // R�initialiser le nombre d'enregistrements
-
-    while (buffer.nb_enregistrement < 3) {
-        printf("Entrez le nom du produit : ");
-        scanf("%20s", &temp.name); // Saisie du nom du produit
-
-
-        printf("Entrez le prix du produit : ");
-        scanf("%f", &temp.price); // Saisie du prix
-
-        printf("Entrez l'ID du produit : ");
-        scanf("%d", &temp.id); // Saisie de l'ID
-
-        // Ajouter le produit au buffer
-        buffer.enregisrement[buffer.nb_enregistrement++] = temp;
+    mt meta;
+    initialisemeta(&meta);
+    ms->file_count = 0;
+    memcpy(ms->T , &T ,sizeof(Tallocation));
+    for(int i = 0 ; i<Total_block ; i++){
+        initialisebuffer(&buffer , i);
+        memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*i, &buffer  ,sizeof(Bloc));
+        memcpy(ms->meta + i*sizeof(meta), &meta , sizeof(mt));
     }
-        // Si le buffer est plein, le sauvegarder dans la m�moire secondaire
-        if (buffer.nb_enregistrement == 3) {
-            if (ms->nm_bloc >= Total_block) {
-                fprintf(stderr, "Erreur : Pas assez d'espace dans la m�moire secondaire.\n");
-                return;
+}
+produit lireProduit() {
+
+    produit p;
+
+    // Lire le nom du produit
+    printf("Entrez le nom du produit :  \n");
+    scanf("%s", p.name);
+
+    // Lire le prix du produit
+    printf("Entrez le prix du produit :  \n");
+    scanf("%f", &p.price);
+
+    // Lire l'ID du produit
+    printf("Entrez l'ID du produit :  \n");
+    scanf("%d", &p.id);
+
+    return p;
+}
+int getFreeBlocPos(Ms *ms){
+    Tallocation T;
+    memcpy(&T , ms->T , sizeof(Tallocation));
+    int j = 0;
+    while(j < Total_block )
+    {
+        if(T.T[j].occupied == false)
+        {
+            return j;
+        }
+        j++;
+    }
+    return -1;
+}
+
+void creationfichier(Ms *ms){
+    //initialization de meta
+    mt meta;
+    memcpy(&meta ,ms->meta,sizeof(meta));
+    int i = 0;
+    while(meta.etat == 1 && i<Total_block){
+        i++;
+        memcpy(&meta ,ms->meta +i*sizeof(mt),sizeof(mt));
+    }
+    int posmeta = i ;
+    if(i==Total_block){
+        printf("pas d'espace disponible pour mettre la meta");
+    }else{
+    int NE,mode_OG ,mode_OI;
+    char nom_fichier[30];
+    produit p;
+    Tallocation T;
+    // Demander le nombre d'enregistrements
+    printf("Entrez le nombre d'enregistrements :  \n");
+    scanf("%d", &NE);
+    meta.nb_enregistrement = NE;
+    produit enregistrement[NE];
+    // Demander le mode d'organisation interne
+    printf("Entrez le mode d'organisation global (1 pour mode chaine, 0 pour mode contigu) : \n");
+    scanf("%d", &mode_OG);
+    meta.org_globale = mode_OG;
+    // Demander le mode d'organisation global
+    printf("Entrez le mode d'organisation interne (1 pour mode ordonne , 0 pour mode non-ordonne ) : \n");
+    scanf("%d", &mode_OI);
+    meta.org_interne = mode_OI;
+    // Demander le nom du fichier
+    printf("Entrez le nom du fichier :  \n");
+    scanf("%s", nom_fichier);
+    strcpy(meta.Nom_du_fichier,nom_fichier);
+
+     div_t temp = div(NE , 4);
+     if(temp.rem == 0){
+        meta.Taille_du_fichier = temp.quot;
+     }else{
+        meta.Taille_du_fichier = temp.quot+1;
+     }
+
+    //stock les donnee en tableau
+    printf("entrez les enregistrement necessaire \n");
+    for(i=0 ; i<NE ; i++){
+        p = lireProduit();
+        enregistrement[i] = p;
+    }
+
+
+    if(mode_OI == 1){
+    //organise le tableau d'apres la cle ID :
+        for (i = 0; i < NE; i++) {
+        int minIdIndex = i;
+            for (int j = i + 1; j < NE; j++) {
+                if (enregistrement[j].id < enregistrement[minIdIndex].id) {
+                    minIdIndex = j;
+                }
             }
-
-            // Sauvegarder le buffer dans la m�moire secondaire
-            memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-            modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occup�
-            ms->nm_bloc++; // Incr�menter le nombre de blocs
-
-            // R�initialiser le buffer
-            buffer.nb_enregistrement = 0;
+                if (minIdIndex != i) {
+                produit temp = enregistrement[i];
+                enregistrement[i] = enregistrement[minIdIndex];
+                enregistrement[minIdIndex] = temp;
+                }
         }
-
-
-    // Sauvegarder le reste du buffer (s'il reste des produits)
-    if (buffer.nb_enregistrement > 0) {
-        if (ms->nm_bloc >= Total_block) {
-            fprintf(stderr, "Erreur : Pas assez d'espace dans la m�moire secondaire.\n");
-            return;
+    }
+    Bloc buffer2;
+    //recherche de l'espace en ms
+    if(mode_OG == 0){
+    memcpy(&T , ms->T  , sizeof(Tallocation));
+    i=0;
+    int j=0;
+    while(i<meta.Taille_du_fichier && j<=Total_block+1){
+        if(T.T[j].occupied == false){
+            i++;
+        }else{
+            i=0;
         }
-        memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-        modifierTableAllocation(ms, ms->nm_bloc, true); // Marquer le bloc comme occup�
-        ms->nm_bloc++; // Incr�menter le nombre de blocs
+        j++;
     }
 
-    printf("Les donn�es ont �t� charg�es dans la m�moire secondaire.\n");
+    if(i == meta.Taille_du_fichier){
+    meta.adresse_firstblock = j-i;
+    meta.etat=1;
+    ms->file_count++;
+    memcpy( ms->meta + sizeof(mt)*posmeta , &meta , sizeof(mt));
+    }else{
+    printf("pas d'espace");
+    }
+
+    int w=0;
+    for(i=0 ; i<meta.Taille_du_fichier ; i++){
+        memcpy(&buffer2 , ms->T + sizeof(Tallocation) + meta.adresse_firstblock*sizeof(Bloc) + i*sizeof(Bloc) ,sizeof(Bloc));
+        j=0;
+        while(j<4 && w<meta.nb_enregistrement){
+            buffer2.enregisrement[j] = enregistrement[w];
+            buffer2.nb_enregistrement++;
+            w++;
+            j++;
+        }
+        memcpy(ms->T + sizeof(Tallocation) + i*sizeof(Bloc) + meta.adresse_firstblock*sizeof(Bloc) ,&buffer2 ,sizeof(Bloc));
+        updateTabAlloc(ms,buffer2.ADR,true);
+    }
+    }else{
+        memcpy(&T , ms->T  , sizeof(Tallocation));
+        i=0;
+        int j=0;
+        while(i<meta.Taille_du_fichier && j<Total_block){
+            if(T.T[j].occupied == false){
+                i++;
+            }
+            if(i == 1){
+                meta.adresse_firstblock = j;
+            }
+            j++;
+        }
+        if(i==meta.Taille_du_fichier){
+        meta.etat=1;
+        memcpy( ms->meta + sizeof(mt)* posmeta, &meta , sizeof(mt));
+        ms->file_count++;
+        }else{
+        printf("pas d'espace");
+        }
+        j=1;
+        i=0;
+        int w=0;
+        while(j <= meta.Taille_du_fichier)
+        {
+            int freePos = getFreeBlocPos(ms);
+            int NextFreePos;
+            memcpy(&buffer2 , ms->T +sizeof(Tallocation)+ freePos*sizeof(Bloc) + meta.adresse_firstblock * sizeof(Bloc)  , sizeof(Bloc));
+            for(i = 0; i < 4; i++)
+            {
+                if(w < meta.nb_enregistrement)
+                {
+                    buffer2.enregisrement[i] = enregistrement[w];
+                    buffer2.nb_enregistrement++;
+                    w++;
+                }
+            }
+            updateTabAlloc(ms , freePos, true);
+            NextFreePos = getFreeBlocPos(ms);
+            buffer2.next = NextFreePos;
+
+            if(j == meta.Taille_du_fichier) // if last bloc does not have next
+            {
+                buffer2.next = -1;
+            }
+            memcpy(ms->T + sizeof(Tallocation) + freePos*sizeof(Bloc),&buffer2 ,sizeof(Bloc));
+            j++;
+        }
+    }
+    }
 }
-void chargerMs(Ms *ms, const char *nomFichier) {
-    if (ms == NULL || nomFichier == NULL) {
-        fprintf(stderr, "Erreur : Pointeur invalide.\n");
-        return;
-    }
-
-    // Ouvre le fichier binaire en lecture
-    ms->Ms = fopen(nomFichier, "a+");  // Ouvre le fichier en mode lecture binaire
-    if (ms->Ms == NULL) {
-        fprintf(stderr, "Erreur : Impossible d'ouvrir le fichier %s.\n", nomFichier);
-        return;
-    }
-
-    // R�initialiser l'�tat de la m�moire secondaire
-    memset(ms->T, 0, sizeof(ms->T));  // Remplir les blocs avec des z�ros
-    ms->nm_bloc = 0;  // Aucun bloc utilis� au d�but
-    ms->occupied = false;  // Initialiser l'occupation � faux
-
-    Bloc buffer;  // Buffer pour lire un bloc
-    int blocIndex = 0;  // Indice pour le bloc actuel
-    while (fread(&buffer, sizeof(Bloc), 1, ms->Ms) == 1) {
-        // Si le bloc est valide, le charger dans la m�moire secondaire
-        if (buffer.nb_enregistrement > 0) {
-            memcpy(ms->T + ms->nm_bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
-
-            // Mettre � jour la table d'allocation
-            modifierTableAllocation(ms, ms->nm_bloc, true);
-
-            ms->nm_bloc++;  // Incr�menter le compteur de blocs utilis�s
+const char *getFileNameForBlock(int blockIndex, mt *fileTable, int fileCount, Ms *ms) {
+    for (int i = 0; i < fileCount; i++) {
+        if (fileTable[i].etat == 1) { // Only check existing files
+            if (fileTable[i].org_globale == 0) { // Contiguous
+                int startBlock = fileTable[i].adresse_firstblock;
+                int endBlock = startBlock + fileTable[i].Taille_du_fichier - 1;
+                if (blockIndex >= startBlock && blockIndex <= endBlock) {
+                    return fileTable[i].Nom_du_fichier;
+                }
+            } else { // Chained
+                int currentBlockIndex = fileTable[i].adresse_firstblock;
+                while (currentBlockIndex != -1) {
+                    Bloc *currentBlock = (Bloc *)(ms->T + sizeof(Tallocation) + currentBlockIndex * sizeof(Bloc));
+                    if (currentBlock->ADR == blockIndex) { // Compare ADR
+                        return fileTable[i].Nom_du_fichier;
+                    }
+                    currentBlockIndex = currentBlock->next;
+                }
+            }
         }
     }
-
-    fclose(ms->Ms);  // Fermer le fichier
-    printf("M�moire secondaire charg�e depuis le fichier %s.\n", nomFichier);
+    return NULL;
 }
-void afficherElementsMs(Ms *ms) {
-    printf("Affichage des �l�ments dans la m�moire secondaire :\n");
+void affichageEnBloc(Ms *ms) {
+    printf("Affichage de l'etat des blocs de la memoire:\n");
+    printf("+---------------------+---------------------+---------------------+---------------------+\n");
+    printf("| Block Index         | File Name           | Nb Enregistrements   | Etat (Free / Occupied)|\n");
+    printf("+---------------------+---------------------+---------------------+---------------------+\n");
 
-    // Parcourir tous les blocs dans la m�moire secondaire
-    for (int i = 0; i < ms->nm_bloc; i++) {
-        // Lire le bloc courant depuis la m�moire secondaire
-        Bloc bloc;
-        memcpy(&bloc, ms->T + i * sizeof(Bloc), sizeof(Bloc));
+    char *dataAreaStart = ms->T + sizeof(Tallocation);
 
-        printf("Bloc %d:\n", i + 1);
+    for (int i = 0; i < Total_block; i++) {
+        Bloc *blocPtr = (Bloc *)(dataAreaStart + i * sizeof(Bloc));
+        const char *fileName = getFileNameForBlock(i, (mt*)ms->meta, ms->file_count, ms); // Pass ms
 
-        // Parcourir les enregistrements dans le bloc
-        for (int j = 0; j < bloc.nb_enregistrement; j++) {
-            produit temp = bloc.enregisrement[j]; // Acc�der � l'enregistrement j
+        if (fileName == NULL || blocPtr->nb_enregistrement == 0) {
+            fileName = "Free";
+            color(10, 0);
+        } else {
+            color(12, 0);
+        }
 
-            // Afficher les d�tails du produit
-            printf("  Produit %d:\n", j + 1);
-            printf("    Nom   : %s\n", temp.name);
-            printf("    Prix  : %f\n", temp.price); // Utilisez temp.price[0] pour afficher le prix
-            printf("    ID    : %d\n", temp.id);    // Utilisez temp.id[0] pour afficher l'ID
+        printf("| %-19d | %-19s | %-19d | %-19s |\n", i, fileName, blocPtr->nb_enregistrement, (blocPtr->nb_enregistrement == 0 ? "Free" : "Occupied"));
+        printf("+---------------------+---------------------+---------------------+---------------------+\n");
+    }
+    color(15, 0);
+}
+ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, const char *nomFichier) {
+    ResultatRecherche resultat = {-1, -1, false};
+    mt *fileTable = (mt*)ms->meta;
+
+    // Find the file metadata
+    int fileIndex = -1;
+    for (int i = 0; i < ms->file_count; i++) {
+        if (strcmp(fileTable[i].Nom_du_fichier, nomFichier) == 0 && fileTable[i].etat == 1) {
+            fileIndex = i;
+            break;
         }
     }
-}
 
-    #include <stdbool.h>
-#include <string.h>
+    if (fileIndex == -1) {
+        printf("Fichier '%s' introuvable.\n", nomFichier);
+        return resultat; // File not found
+    }
 
-// Structure pour repr�senter le r�sultat de la recherche
-typedef struct {
-    int bloc;     // Num�ro du bloc
-    int position; // Position dans le bloc
-    bool trouve;  // Indique si l'enregistrement est trouv�
-} ResultatRecherche;
+    int firstBlock = fileTable[fileIndex].adresse_firstblock;
+    int orgGlobale = fileTable[fileIndex].org_globale;
+    int orgInterne = fileTable[fileIndex].org_interne;
+    int tailleFichier = fileTable[fileIndex].Taille_du_fichier;
 
-#include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+    // Define a buffer to store the block data
+    Bloc bufferBloc;
 
+    if (orgGlobale == 0) { // Contiguous
+        // Load blocks in the range
+        for (int blocCourant = firstBlock; blocCourant < firstBlock + tailleFichier; blocCourant++) {
+            // Copy block data into buffer
+            memcpy(&bufferBloc, ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), sizeof(Bloc));
 
-
-;
-
-// Fonction de recherche utilisant un buffer
-ResultatRecherche rechercherParIDAvecBuffer(Ms *ms, int idRecherche, bool globaleChainee, bool interneTriee) {
-    ResultatRecherche resultat = {-1, -1, false}; // Initialisation du r�sultat
-
-    // Cr�ation d'un buffer pour contenir plusieurs blocs
-    Bloc buffer[3];
-
-    int blocCourant = 0;
-
-    while (blocCourant < ms->nm_bloc) {
-        // Charger les blocs dans le buffer
-        int blocsCharges = 0;
-        for (int i = 0; i < 3 && blocCourant < ms->nm_bloc; i++, blocCourant++) {
-            memcpy(&buffer[i], ms->T + blocCourant * sizeof(Bloc), sizeof(Bloc));
-            blocsCharges++;
+            for (int j = 0; j < bufferBloc.nb_enregistrement; j++) {
+                if (bufferBloc.enregisrement[j].id == idRecherche) {
+                    resultat.bloc = blocCourant;
+                    resultat.position = j;
+                    resultat.trouve = true;
+                    return resultat;
+                }
+            }
         }
+    } else { // Chained
+        int blocCourant = firstBlock;
+        while (blocCourant != -1) {
+            // Load the current block into the buffer
+            memcpy(&bufferBloc, ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), sizeof(Bloc));
 
-        // Recherche dans les blocs du buffer
-        for (int i = 0; i < blocsCharges; i++) {
-            Bloc *bloc = &buffer[i];
-
-            if (interneTriee) {
-                // Recherche binaire dans un bloc tri�
-                int gauche = 0, droite = bloc->nb_enregistrement - 1;
+            if (orgInterne) { // Binary search if sorted
+                int gauche = 0, droite = bufferBloc.nb_enregistrement - 1;
                 while (gauche <= droite) {
                     int milieu = (gauche + droite) / 2;
-                    if (bloc->enregisrement[milieu].id == idRecherche) {
-                        resultat.bloc = blocCourant - blocsCharges + i; // Bloc correspondant
-                        resultat.position = milieu;                     // Position dans le bloc
+                    if (bufferBloc.enregisrement[milieu].id == idRecherche) {
+                        resultat.bloc = blocCourant;
+                        resultat.position = milieu;
                         resultat.trouve = true;
                         return resultat;
-                    } else if (bloc->enregisrement[milieu].id < idRecherche) {
+                    } else if (bufferBloc.enregisrement[milieu].id < idRecherche) {
                         gauche = milieu + 1;
                     } else {
                         droite = milieu - 1;
                     }
                 }
-            } else {
-                // Recherche lin�aire dans un bloc non tri�
-                for (int j = 0; j < bloc->nb_enregistrement; j++) {
-                    if (bloc->enregisrement[j].id == idRecherche) {
-                        resultat.bloc = blocCourant - blocsCharges + i; // Bloc correspondant
-                        resultat.position = j;                          // Position dans le bloc
+            } else { // Linear search
+                for (int j = 0; j < bufferBloc.nb_enregistrement; j++) {
+                    if (bufferBloc.enregisrement[j].id == idRecherche) {
+                        resultat.bloc = blocCourant;
+                        resultat.position = j;
                         resultat.trouve = true;
                         return resultat;
                     }
                 }
             }
+
+            // Move to the next block in the chain
+            blocCourant = bufferBloc.next;
         }
     }
 
-    // Si aucun r�sultat n'a �t� trouv�
-    printf("Enregistrement avec ID %d introuvable.\n", idRecherche);
+    printf("Enregistrement avec ID %d introuvable dans le fichier '%s'.\n", idRecherche, nomFichier);
     return resultat;
 }
-*/
+void insertion(Ms *ms , produit p){
 
-// compactage de la m�moire secondaire
+    Tallocation T;
+    Bloc buffer;
+    int index;
+    mt meta;
+    int i=0;
+    char filename[20];
+    memcpy(&meta ,ms->meta + i*sizeof(mt),sizeof(mt));
+    printf("entrez le nom du fichier : \n");
 
+    scanf("%s" , filename);
+    while(strcmp(meta.Nom_du_fichier, filename)!=0){
+            i++;
+        memcpy(&meta ,ms->meta + i*sizeof(mt),sizeof(mt));
+    }
+    index = i;
+    memcpy(&T , ms->T , sizeof(Tallocation));
+     i = 0;
+    int j = 1;
+
+    if(meta.org_globale == 0){
+        if(meta.org_interne == 0)
+        {//TNO
+                memcpy(&buffer,ms->T + meta.adresse_firstblock * (sizeof(Bloc)) + sizeof(Tallocation) + (meta.Taille_du_fichier-1) * sizeof(Bloc), sizeof(Bloc));//lire dernier bloc en buffer
+                if(buffer.nb_enregistrement<4){//l'espace existe dans le dernier bloc du fichier
+
+                    buffer.enregisrement[buffer.nb_enregistrement] = p;
+                    buffer.nb_enregistrement++;
+                    memcpy(ms->T + buffer.ADR * sizeof(Bloc) + sizeof(Tallocation), &buffer, sizeof(Bloc));
+                    meta.nb_enregistrement++;
+                }else{//besoin de mettre le produit dans un nouveau bloc
+                    if(T.T[meta.adresse_firstblock+meta.Taille_du_fichier].occupied == false){
+                        memcpy(&buffer,ms->T + meta.adresse_firstblock * (sizeof(Bloc)) + sizeof(Tallocation) + meta.Taille_du_fichier * sizeof(Bloc), sizeof(Bloc));
+                        buffer.enregisrement[0] = p;
+                        buffer.nb_enregistrement++;
+                        memcpy(ms->T + buffer.ADR * sizeof(Bloc)  + sizeof(Tallocation), &buffer, sizeof(Bloc));
+                        meta.Taille_du_fichier++;
+                        meta.nb_enregistrement++;
+                        updateTabAlloc(ms , meta.adresse_firstblock + meta.Taille_du_fichier-1 , true);
+                    }else{//impossible
+                        printf("pas d'espace dans les blocs du fichier.");
+                    }
+                }
+        }else//TO
+            {
+                if(meta.nb_enregistrement % 4 != 0) {//cas ou il ya de l'espace dans le bloc
+                    produit tab[meta.nb_enregistrement+1];
+                    memcpy(&buffer , ms->T + meta.adresse_firstblock * sizeof(Bloc) + sizeof(Tallocation) , sizeof(Bloc));//premier bloc
+                    i=1;
+                    j=0;
+                    while(j<meta.nb_enregistrement){
+                        for(int k = 0 ; k<4 ; k++){
+                            if(j<meta.nb_enregistrement)
+                            {
+                                tab[j] = buffer.enregisrement[k];
+                                j++;
+                            }
+
+                        }
+                        memcpy(&buffer , ms->T + meta.adresse_firstblock * sizeof(Bloc)+ sizeof(Tallocation) + sizeof(Bloc) * i , sizeof(Bloc));//prochain bloc
+                        i++;
+                    }
+                    tab[meta.nb_enregistrement] = p;
+                    for (int i = 0; i <= meta.nb_enregistrement; i++) {//trier tab
+                    int minIdIndex = i;
+                        for (int j = i + 1; j <= meta.nb_enregistrement; j++) {
+                            if (tab[j].id < tab[minIdIndex].id) {
+                                minIdIndex = j;
+                            }
+                        }
+                            if (minIdIndex != i) {
+                            produit temp = tab[i];
+                            tab[i] = tab[minIdIndex];
+                            tab[minIdIndex] = temp;
+                            }
+                    }
+                    int w=0;
+                    for(int i = 0 ; i<meta.Taille_du_fichier ; i++){
+                    memcpy(&buffer , ms->T + sizeof(Tallocation) + meta.adresse_firstblock*sizeof(Bloc) + i*sizeof(Bloc) ,sizeof(Bloc));
+                    j=0;
+                    while(j<4 && w<=meta.nb_enregistrement){
+                        buffer.enregisrement[j] = tab[w];
+                        w++;
+                        j++;
+                    }
+                    memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc) * buffer.ADR , &buffer , sizeof(Bloc));
+                    }
+                    buffer.nb_enregistrement++;
+                    memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc) * buffer.ADR , &buffer , sizeof(Bloc));
+                    meta.nb_enregistrement++;
+                    } else{//on a besoin d'un nouveau bloc
+                        if(T.T[meta.adresse_firstblock + meta.Taille_du_fichier].occupied == false){
+                            produit tab[meta.nb_enregistrement+1];
+                            updateTabAlloc(ms,meta.adresse_firstblock + meta.Taille_du_fichier,true);
+                            memcpy(&buffer , ms->T + meta.adresse_firstblock * sizeof(Bloc) + sizeof(Tallocation) , sizeof(Bloc));//premier bloc
+                            i=1;
+                            j=0;
+                            while(j < meta.nb_enregistrement){
+                                for(int k = 0 ; k<4 ; k++){
+                                    tab[j] = buffer.enregisrement[k];
+                                    j++;
+                                }
+                                memcpy(&buffer , ms->T + meta.adresse_firstblock * sizeof(Bloc)+ sizeof(Tallocation) + sizeof(Bloc) * i , sizeof(Bloc));//prochain bloc
+                                i++;
+                            }
+                            tab[meta.nb_enregistrement] = p;
+
+                            for (int i = 0; i <= meta.nb_enregistrement; i++) {//trier tab
+                            int minIdIndex = i;
+                                for (int j = i + 1; j <= meta.nb_enregistrement; j++) {
+                                    if (tab[j].id < tab[minIdIndex].id) {
+                                        minIdIndex = j;
+                                    }
+                                }
+                                    if (minIdIndex != i) {
+                                    produit temp = tab[i];
+                                    tab[i] = tab[minIdIndex];
+                                    tab[minIdIndex] = temp;
+                                    }
+                            }
+                            int w=0;
+                            for(int i = 0 ; i<meta.Taille_du_fichier+1 ; i++){
+                            memcpy(&buffer , ms->T + sizeof(Tallocation) + meta.adresse_firstblock*sizeof(Bloc) + i*sizeof(Bloc) ,sizeof(Bloc));
+                            j=0;
+                            while(j<4 && w<=meta.nb_enregistrement){
+                                buffer.enregisrement[j] = tab[w];
+                                w++;
+                                j++;
+                            }
+                            memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc) * buffer.ADR , &buffer , sizeof(Bloc));
+                            }
+                            buffer.nb_enregistrement++;
+                            memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc) * buffer.ADR , &buffer , sizeof(Bloc));
+                            meta.nb_enregistrement++;
+                            meta.Taille_du_fichier++;
+                    }else{
+                        printf("pas d'espace");
+                    }
+                }
+                if(meta.nb_enregistrement == 0){
+                    memcpy(&buffer , ms->T + sizeof(Tallocation) + meta.adresse_firstblock * sizeof(Bloc) , sizeof(Bloc));
+                    buffer.enregisrement[0] = p;
+                    memcpy( ms->T + sizeof(Tallocation) + buffer.ADR * sizeof(Bloc) ,&buffer , sizeof(Bloc));
+                    meta.nb_enregistrement++;
+                }
+
+    }
+    }else{//L
+        if(meta.org_interne == 0){//LNO
+
+            memcpy(&buffer , ms->T + meta.adresse_firstblock * sizeof(Bloc) + sizeof(Tallocation), sizeof(Bloc));
+            int pos;
+               while(buffer.next != -1){//trouver dernier bloc
+                    memcpy(&buffer , ms->T + (buffer.next) * (sizeof(Bloc)) + sizeof(Tallocation), sizeof(Bloc));
+               }
+           if(buffer.nb_enregistrement<4){//dernier bloc a de l'espace
+                buffer.enregisrement[buffer.nb_enregistrement] = p;
+                buffer.nb_enregistrement++;
+                memcpy(ms->T + buffer.ADR * sizeof(Bloc) + sizeof(Tallocation), &buffer, sizeof(Bloc));
+                meta.nb_enregistrement++;
+           }else{//dernier bloc a pas d'espace
+                i = 0;
+                while(T.T[i].occupied == true && i<=Total_block){
+                    i++;
+                }
+                if(i==Total_block){
+                    printf("pas d'espace disponible");
+                }else{
+                    pos = i;
+                    memcpy(&buffer , ms->T + i*sizeof(Bloc) + sizeof(Tallocation) , sizeof(Bloc));
+                    buffer.enregisrement[0] = p;
+                    buffer.nb_enregistrement++;
+                    memcpy( ms->T + i*sizeof(Bloc) + sizeof(Tallocation) , &buffer , sizeof(Bloc));
+                    updateTabAlloc(ms , pos , true);
+                    meta.nb_enregistrement++;
+                    meta.Taille_du_fichier++;
+                }
+
+           }
+        }else{//LO
+            if(meta.nb_enregistrement % 4 != 0) {//cas ou il ya de l'espace dans le bloc
+                   produit tab[meta.nb_enregistrement+1];
+                   memcpy(&buffer,ms->T + sizeof(Tallocation) + sizeof(Bloc)*meta.adresse_firstblock  ,sizeof(Bloc));
+                   int w=0;
+                   int blocCount = 0;
+                   while(buffer.next != -1){
+                        for(int i = 0 ; i < 4 ; i++){
+                            tab[w] = buffer.enregisrement[i];
+                            w++;
+                        }
+                    memcpy(&buffer,ms->T + sizeof(Tallocation) + buffer.next*sizeof(Bloc)  ,sizeof(Bloc) );
+                    blocCount++;
+                   }
+                   int rest = meta.nb_enregistrement - blocCount*4;
+                      if(rest != 0)
+                      {
+                          for(int i = 0 ; i < rest ; i++){
+                                tab[w] = buffer.enregisrement[i];
+                                w++;
+                            }
+                          tab[meta.nb_enregistrement] = p;
+                      }
+                  for (int i = 0; i <= meta.nb_enregistrement; i++) {//trier tab
+                    int minIdIndex = i;
+                        for (int j = i + 1; j <= meta.nb_enregistrement; j++) {
+                            if (tab[j].id < tab[minIdIndex].id) {
+                                minIdIndex = j;
+                            }
+                        }
+                        if (minIdIndex != i) {
+                        produit temp = tab[i];
+                        tab[i] = tab[minIdIndex];
+                        tab[minIdIndex] = temp;
+                        }
+                    }
+
+                    memcpy(&buffer , ms->T + sizeof(Tallocation) + sizeof(Bloc)*meta.adresse_firstblock , sizeof(Bloc));
+                    w=0;
+                    while(buffer.next != -1){
+                        for(int i = 0 ; i < 4 ; i++){
+                             buffer.enregisrement[i] = tab[w];
+                             w++;
+                        }
+                        memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.ADR , &buffer ,  sizeof(Bloc));
+                        memcpy(&buffer , ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.next , sizeof(Bloc));
+                    }
+                        for(int i = 0 ; i < rest + 1 ; i++){
+                             buffer.enregisrement[i] = tab[w];
+                             w++;
+                        }
+                        buffer.nb_enregistrement++;
+                        memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.ADR , &buffer ,  sizeof(Bloc));
+                        meta.nb_enregistrement++;
+                        //setmeta
+            }else{
+                if(meta.nb_enregistrement == 0){
+                    memcpy(&buffer , ms->T + sizeof(Tallocation) + meta.adresse_firstblock * sizeof(Bloc) , sizeof(Bloc));
+                    buffer.enregisrement[0] = p;
+                    buffer.nb_enregistrement++;
+                    memcpy( ms->T + sizeof(Tallocation) + buffer.ADR * sizeof(Bloc) ,&buffer , sizeof(Bloc));
+                    updateTabAlloc( ms , buffer.ADR , true);
+                }else
+                {
+                int freeB = getFreeBlocPos(ms);
+                if(freeB != -1){
+                         memcpy(&buffer,ms->T + sizeof(Tallocation) + sizeof(Bloc)*meta.adresse_firstblock  ,sizeof(Bloc));
+                        while(buffer.next != -1){
+                          memcpy(&buffer,ms->T + sizeof(Tallocation) + buffer.next*sizeof(Bloc)  ,sizeof(Bloc) );
+                        }
+                    buffer.next = getFreeBlocPos(ms);
+                    updateTabAlloc(ms , buffer.next , true);
+                    memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.ADR , &buffer ,  sizeof(Bloc));
+                  produit tab[meta.nb_enregistrement+1];
+                  memcpy(&buffer,ms->T + sizeof(Tallocation) + sizeof(Bloc)*meta.adresse_firstblock  ,sizeof(Bloc));
+                  int w=0;
+                  while(buffer.next != -1){
+                        for(int i = 0 ; i < 4 ; i++){
+                            tab[w] = buffer.enregisrement[i];
+                            w++;
+                        }
+                    memcpy(&buffer,ms->T + sizeof(Tallocation) + buffer.next*sizeof(Bloc)  ,sizeof(Bloc) );
+                  }
+                  tab[meta.nb_enregistrement] = p;
+                  for (int i = 0; i <= meta.nb_enregistrement; i++) {//trier tab
+                    int minIdIndex = i;
+                        for (int j = i + 1; j <= meta.nb_enregistrement; j++) {
+                            if (tab[j].id < tab[minIdIndex].id) {
+                                minIdIndex = j;
+                            }
+                        }
+                        if (minIdIndex != i) {
+                        produit temp = tab[i];
+                        tab[i] = tab[minIdIndex];
+                        tab[minIdIndex] = temp;
+                        }
+                    }
+
+                    memcpy(&buffer , ms->T + sizeof(Tallocation) + sizeof(Bloc)*meta.adresse_firstblock , sizeof(Bloc));
+                    w=0;
+                    while(buffer.next != -1){
+                        for(int i = 0 ; i < 4 ; i++){
+                             buffer.enregisrement[i] = tab[w];
+                             w++;
+                        }
+                        memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.ADR , &buffer ,  sizeof(Bloc));
+                        memcpy(&buffer , ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.next , sizeof(Bloc));
+                    }
+
+                        buffer.enregisrement[0] = tab[meta.nb_enregistrement];
+                        buffer.nb_enregistrement++;
+                        memcpy(ms->T + sizeof(Tallocation) + sizeof(Bloc)*buffer.ADR , &buffer ,  sizeof(Bloc));
+                        meta.nb_enregistrement++;
+                        meta.Taille_du_fichier++;
+                        //setmeta
+                }else{
+                printf("pas d'espace");
+                }
+            }
+            }
+        }
+    }
+    memcpy( ms->meta + index*sizeof(mt) , &meta , sizeof(mt));
+}
+int getPreviousBlockIndex(Ms *ms, int currentBlocIndex) {
+    // Loop through the blocks to find the previous block (depends on how blocks are chained)
+    for (int i = 0; i < Total_block; i++) {  // Loop through available blocks (not just total)
+        // Treat ms->T as an array of Bloc objects
+        Bloc *blocPtr = (Bloc *)(ms->T+ sizeof(Tallocation) + i * sizeof(Bloc));  // Cast to pointer to Bloc
+        if (blocPtr->next == currentBlocIndex) {
+            return i;  // Return the index of the previous block
+        }
+    }
+    return -1;  // Return -1 if no previous block is found (e.g., if it's the first block)
+}
+void supprimerLogiquement(Ms *ms, int idRecherche, const char *nomFichier) {
+    // Step 1: Search for the record (using the corrected function)
+    ResultatRecherche resultat = rechercherParIDAvecBuffer(ms, idRecherche, nomFichier);
+
+    if (!resultat.trouve) {
+        printf("Enregistrement avec ID %d introuvable dans le fichier '%s', suppression annulée.\n", idRecherche, nomFichier);
+        return;
+    }
+
+    // Step 2: Mark the record as logically deleted
+    Bloc bloc;
+    memcpy(&bloc, ms->T + sizeof(Tallocation) + resultat.bloc * sizeof(Bloc), sizeof(Bloc));
+
+    // Check if the record is already deleted (name starts with '*')
+    if (bloc.enregisrement[resultat.position].name[0] == '*') {
+        printf("Enregistrement avec ID %d est déjà supprimé logiquement.\n", idRecherche);
+        return;
+    }
+
+    // Mark as deleted by prepending '*' to the name
+    char deletedName[21]; // One extra char for '*' and null terminator
+    snprintf(deletedName, sizeof(deletedName), "*%s", bloc.enregisrement[resultat.position].name);
+    strncpy(bloc.enregisrement[resultat.position].name, deletedName, 20); // Copy back to the block
+
+    // Write the modified block back to memory
+    memcpy(ms->T + sizeof(Tallocation) + resultat.bloc * sizeof(Bloc), &bloc, sizeof(Bloc));
+
+     printf("Enregistrement avec ID %d dans le fichier '%s' supprimé logiquement.\n", idRecherche, nomFichier);
+}
+void supprimerPhysiquement(Ms *ms, int idRecherche, const char *nomFichier) {
+    ResultatRecherche resultat = rechercherParIDAvecBuffer(ms, idRecherche, nomFichier);
+    if (!resultat.trouve) {
+        printf("Enregistrement avec ID %d introuvable, suppression annulée.\n", idRecherche);
+        return;
+    }
+
+    // Get file metadata
+    mt *fileTable = (mt*)ms->meta;
+    int fileIndex = -1;
+    for (int i = 0; i < ms->file_count; i++) {
+        if (strcmp(fileTable[i].Nom_du_fichier, nomFichier) == 0 && fileTable[i].etat == 1) {
+            fileIndex = i;
+            break;
+        }
+    }
+
+    if (fileIndex == -1) {
+        printf("Fichier '%s' introuvable.\n", nomFichier);
+        return;
+    }
+
+    bool interneTriee = fileTable[fileIndex].org_interne;
+    bool globaleChainee = fileTable[fileIndex].org_globale;
+
+    // Use a buffer for optimization
+    Bloc buffer;
+    memcpy(&buffer, ms->T + sizeof(Tallocation) + resultat.bloc * sizeof(Bloc), sizeof(Bloc));
+
+    if (interneTriee) {
+        for (int i = resultat.position; i < buffer.nb_enregistrement - 1; i++) {
+            buffer.enregisrement[i] = buffer.enregisrement[i + 1];
+
+    }
+    } else {
+        buffer.enregisrement[resultat.position] = buffer.enregisrement[buffer.nb_enregistrement - 1];
+
+    }
+    buffer.enregisrement[buffer.nb_enregistrement - 1].id = 0;
+    buffer.enregisrement[buffer.nb_enregistrement - 1].price = 0.0;
+    strcpy(buffer.enregisrement[buffer.nb_enregistrement - 1].name, "");
+    buffer.nb_enregistrement--;
+
+
+    // Write the modified buffer back to memory
+    memcpy(ms->T + sizeof(Tallocation) + resultat.bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
+
+    if (buffer.nb_enregistrement == 0) {
+        modifierTableAllocation(ms, resultat.bloc, false);
+        
+        if (globaleChainee) {
+            int previousBlocIndex = getPreviousBlockIndex(ms, resultat.bloc);
+
+            if (previousBlocIndex != -1) {
+                Bloc previousBloc;
+                memcpy(&previousBloc, ms->T + sizeof(Tallocation) + previousBlocIndex * sizeof(Bloc), sizeof(Bloc));
+                previousBloc.next = buffer.next;//Use buffer.next instead of bloc.next
+                memcpy(ms->T + sizeof(Tallocation) + previousBlocIndex * sizeof(Bloc), &previousBloc, sizeof(Bloc));
+            } else {
+                fileTable[fileIndex].adresse_firstblock = -1;
+                fileTable[fileIndex].etat = 0;
+                ms->file_count--;
+                memcpy(ms->meta, fileTable, sizeof(mt)*Total_block);
+            }
+        }
+    }
+
+    printf("Enregistrement avec ID %d dans le fichier '%s' supprimé physiquement.\n", idRecherche, nomFichier);
+}
+void defragmenterFichier(Ms *ms, const char *nom_fichier) {
+    if (ms == NULL || nom_fichier == NULL) {
+        fprintf(stderr, "Erreur : Le pointeur Ms ou le nom du fichier est NULL.\n");
+        return;
+    }
+
+    Tallocation tallocation;
+    memcpy(&tallocation, ms->T, sizeof(Tallocation));
+
+    // Locate metadata for the file
+    mt meta;
+    int meta_index = -1;
+    for (int i = 0; i < Total_block; i++) {
+        memcpy(&meta, ms->meta + i * sizeof(mt), sizeof(mt));
+        if (strcmp(meta.Nom_du_fichier, nom_fichier) == 0 && meta.etat == 1) {
+            meta_index = i;
+            break;
+        }
+    }
+
+    if (meta_index == -1) {
+        fprintf(stderr, "Erreur : Fichier '%s' introuvable.\n", nom_fichier);
+        return;
+    }
+
+    Bloc defrag_blocks[Total_block];
+    int defrag_count = 0;
+
+    // Traverse all blocks in the linked list of the file
+    int current_block = meta.adresse_firstblock;
+    while (current_block != -1) {
+        Bloc bloc;
+        memcpy(&bloc, ms->T + sizeof(Tallocation) + current_block * sizeof(Bloc), sizeof(Bloc));
+        defrag_blocks[defrag_count++] = bloc;
+        updateTabAlloc(ms, current_block, false); // Mark the block as unallocated
+        current_block = bloc.next;
+    }
+
+    // Allocate new blocks contiguously
+    int new_first_block = getFreeBlocPos(ms);
+    if (new_first_block == -1 || new_first_block + defrag_count > Total_block) {
+        fprintf(stderr, "Erreur : Pas assez d'espace pour défragmenter le fichier '%s'.\n", nom_fichier);
+        return;
+    }
+
+    for (int i = 0; i < defrag_count; i++) {
+        Bloc bloc = defrag_blocks[i];
+        int block_pos = new_first_block + i;
+
+        bloc.ADR = block_pos;
+        bloc.next = (i == defrag_count - 1) ? -1 : (block_pos + 1);
+
+        memcpy(ms->T + sizeof(Tallocation) + block_pos * sizeof(Bloc), &bloc, sizeof(Bloc));
+        updateTabAlloc(ms, block_pos, true);
+    }
+
+    // Update metadata
+    meta.adresse_firstblock = new_first_block;
+    meta.Taille_du_fichier = defrag_count;
+    memcpy(ms->meta + meta_index * sizeof(mt), &meta, sizeof(mt));
+
+    printf("Défragmentation terminée pour le fichier '%s'.\n", nom_fichier);
+    displayTallocation(tallocation); // Display updated allocation table
+}
 void compacterMs(Ms *ms, Tallocation *talloc) {
 
     // Check if the memory structure pointer is NULL
@@ -435,7 +980,42 @@ void compacterMs(Ms *ms, Tallocation *talloc) {
         i = 0;  // Reset i for the next iteration
     }
 }
+void renameFile(Ms *ms, const char currentName) {
+    // Get the file metadata
+    mt *fileTable = (mt*)ms->meta;
 
+    // Search for the file in the metadata
+    int fileIndex = -1;
+    for (int i = 0; i < ms->file_count; i++) {
+        if (strcmp(fileTable[i].Nom_du_fichier, currentName) == 0 && fileTable[i].etat == 1) {
+            fileIndex = i;
+            break;
+        }
+    }
+
+    // If the file is not found, print an error message and return
+    if (fileIndex == -1) {
+        printf("Fichier '%s' introuvable ou déjà supprimé.\n", currentName);
+        return;
+    }
+
+    // Ask the user for the new name
+    char newName[30];  // Ensure the name size fits within the field limit
+    printf("Entrez le nouveau nom pour le fichier '%s': ", currentName);
+    fgets(newName, sizeof(newName), stdin);
+
+    // Remove the newline character if present
+    newName[strcspn(newName, "\n")] = '\0';
+
+    // Update the file name
+    strncpy(fileTable[fileIndex].Nom_du_fichier, newName, sizeof(fileTable[fileIndex].Nom_du_fichier) - 1);
+    fileTable[fileIndex].Nom_du_fichier[sizeof(fileTable[fileIndex].Nom_du_fichier) - 1] = '\0';  // Ensure null-termination
+
+    // Write the updated metadata back to memory
+    memcpy(ms->meta, fileTable, sizeof(mt) * Total_block);
+
+    printf("Le fichier '%s' a été renommé en '%s'.\n", currentName, newName);
+}
 void suppfichiercntg(Ms *ms , Tallocation *talloc , mt *metainfo) { //addr firstblock and nb erg from met
 
     int nb_reg = metainfo->nb_enregistrement;
@@ -450,7 +1030,6 @@ void suppfichiercntg(Ms *ms , Tallocation *talloc , mt *metainfo) { //addr first
     }
     compacterMs(ms, talloc);
 }
-
 void suppfichierchaine(Ms *ms , Tallocation *talloc , mt *metainfo) {
 
     int nb_reg = metainfo->nb_enregistrement;
@@ -466,8 +1045,7 @@ void suppfichierchaine(Ms *ms , Tallocation *talloc , mt *metainfo) {
     }
     compacterMs(ms, talloc);
 }
-
-suppfichier(Ms *ms , Tallocation *talloc , mt *metainfo ){
+void suppfichier(Ms *ms , Tallocation *talloc , mt *metainfo ){
 
     bool choix = metainfo->org_globale ;
 
@@ -480,140 +1058,154 @@ suppfichier(Ms *ms , Tallocation *talloc , mt *metainfo ){
 
 }
 
+void afficherElementsbuffer(Bloc buffer){
+        for (int j = 0; j < 4; j++) {
+            // Afficher les détails du produit
+            printf("  Produit %d:\n", j + 1);
+            printf("    Nom   : %s\n", buffer.enregisrement[j].name);
+            printf("    Prix  : %f\n", buffer.enregisrement[j].price); // Utilisez temp.price[0] pour afficher le prix
+            printf("    ID    : %d\n", buffer.enregisrement[j].id);    // Utilisez temp.id[0] pour afficher l'ID
+        }
+}
+void afficherElementsMs(Ms *ms) {
+    printf("Affichage des elements dans la mémoire secondaire :\n");
 
-/*
+    // Parcourir tous les blocs dans la mémoire secondaire
+    for (int i = 0; i < 5; i++) {
+        // Lire le bloc courant depuis la mémoire secondaire
+        Bloc bloc;
+        memcpy(&bloc, ms->T + i * sizeof(Bloc) + sizeof(Tallocation), sizeof(Bloc));
+
+        printf("Bloc %d:\n", i + 1);
+
+        // Parcourir les enregistrements dans le bloc
+        afficherElementsbuffer(bloc);
+    }
+}
+void afficherMETAMs(Ms *ms) {
+    printf("Affichage des meta dans la memoire secondaire (les 4 premiers):\n");
+    mt meta;
+    for(int i=0 ; i<4 ; i++){
+        memcpy(&meta , ms->meta + i*sizeof(mt),sizeof(mt));
+        printf("Nom du fichier:             %s\n", meta.Nom_du_fichier);
+        printf("Taille du fichier:          %d\n", meta.Taille_du_fichier);
+        printf("Nombre d'enregistrements :  %d\n", meta.nb_enregistrement);
+        printf("Adresse du premier bloc :   %d\n", meta.adresse_firstblock);
+        printf("Organisation globale :      %d\n", meta.org_globale);
+        printf("Organisation interne :      %d\n", meta.org_interne);
+        printf("etat du fichier      :      %d\n", meta.etat );
+        printf("___________________________________\n");
+    }
+    printf("ms->T file count = %d \n" , ms->file_count);
+}
+
+// Include all the function declarations and type definitions from the provided code...
+void displayMenu() {
+    printf("\n=== MENU PRINCIPAL ===\n");
+    printf("1. Initialiser la mémoire secondaire\n");
+    printf("2. Créer un fichier\n");
+    printf("3. Afficher l'état de la mémoire secondaire\n");
+    printf("4. Afficher les métadonnées des fichiers\n");
+    printf("5. Rechercher un enregistrement par ID\n");
+    printf("6. Insérer un nouvel enregistrement\n");
+    printf("7. Supprimer un enregistrement (logique)\n");
+    printf("8. Supprimer un enregistrement (physique)\n");
+    printf("9. Défragmenter un fichier\n");
+    printf("10. Supprimer un fichier\n");
+    printf("11. Renommer un fichier\n");
+    printf("12. Compactage de la mémoire secondaire\n");
+    printf("13. Vider la mémoire secondaire\n");
+    printf("14. Quitter\n");
+    printf("Choisissez une option : ");
+}
 
 int main() {
     Ms ms;
-
-    // Initialiser la m�moire secondaire
-    initialiserMs(&ms, "ms.txt");
-
-    // Charger des produits dans le buffer
-    chargerDansBuffer(&ms);
-
-    // Afficher les �l�ments de la m�moire secondaire
-    afficherElementsMs(&ms);
-
-    // Rechercher un enregistrement par ID
+    int choix;
+    char nomFichier[30];
     int idRecherche;
-    printf("Entrez l'ID � rechercher : ");
-    scanf("%d", &idRecherche);
-
-    // Effectuer la recherche avec buffer
-    ResultatRecherche resultat = rechercherParIDAvecBuffer(&ms, idRecherche, false, false);
-
-    // Afficher le r�sultat
-    if (resultat.trouve) {
-        printf("Enregistrement trouv� dans le bloc %d, position %d.\n", resultat.bloc, resultat.position);
-    } else {
-        printf("Enregistrement non trouv�.\n");
-    }
-
-    return 0;
-}
+    produit p;
 
 
+    do {
+        displayMenu();
+        scanf("%d", &choix);
 
-
-
-/*
-void initialiserLaMs( Ms *Ms ){
-
-    printf("Initialiser la Ms ...\n");
-
-    for(int i=0; i<sizeof(bloc)*Total_block ;i++){
-        Ms->T[i]='\0';
-    }
-    for(int i=0; i<Total_block ;i++){
-        Ms->nm_bloc=i;
-    }
-
-}
-
-
- void MajTabledallocation(Ms *Ms ) {
-    printf("MajTabledallocation ...\n");
-    allocation T[Total_block-1];
-    bloc buffer;
-
-    for(int j=1; j<Total_block ;j++) {
-        fseek(Ms, sizeof(buffer), SEEK_SET+1);
-        for(int i = j*sizeof(bloc); i< (j+1)*sizeof(bloc) ;i++) {
-            if(Ms->T[i]!='\0') {
-                T[j].occupied=true;
+        switch (choix) {
+            case 1:
+                initialisems(&ms);
+                printf("Mémoire secondaire initialisée.\n");
                 break;
-            }
-
+            case 2:
+                creationfichier(&ms);
+                break;
+            case 3:
+                affichageEnBloc(&ms);
+                break;
+            case 4:
+                afficherMETAMs(&ms);
+                break;
+            case 5:
+                printf("Entrez le nom du fichier : ");
+                scanf("%s", nomFichier);
+                printf("Entrez l'ID à rechercher : ");
+                scanf("%d", &idRecherche);
+                rechercherParIDAvecBuffer(&ms, idRecherche, nomFichier);
+                break;
+            case 6:
+                p = lireProduit();
+                insertion(&ms, p);
+                break;
+            case 7:
+                printf("Entrez le nom du fichier : ");
+                scanf("%s", nomFichier);
+                printf("Entrez l'ID à supprimer : ");
+                scanf("%d", &idRecherche);
+                supprimerLogiquement(&ms, idRecherche, nomFichier);
+                break;
+            case 8:
+                printf("Entrez le nom du fichier : ");
+                scanf("%s", nomFichier);
+                printf("Entrez l'ID à supprimer : ");
+                scanf("%d", &idRecherche);
+                supprimerPhysiquement(&ms, idRecherche, nomFichier);
+                break;
+            case 9:
+                printf("Entrez le nom du fichier à défragmenter : ");
+                scanf("%s", nomFichier);
+                defragmenterFichier(&ms, nomFichier);
+                break;
+            case 10:
+                printf("Entrez le nom du fichier à supprimer : ");
+                scanf("%s", nomFichier);
+                suppfichier(&ms, NULL, NULL); // Update the parameters as needed
+                break;
+            case 11:
+                printf("Entrez le nom actuel du fichier : ");
+                scanf("%s", nomFichier);
+                renameFile(&ms, nomFichier);
+                break;
+            case 12:
+                compacterMs(&ms, NULL); // Update the second parameter as needed
+                break;
+            case 13:
+                initialisems(&ms);
+                printf("Mémoire secondaire vidée.\n");
+                break;
+            case 14:
+                printf("Quitter le programme.\n");
+                break;
+            default:
+                printf("Choix invalide. Réessayez.\n");
+                break;
         }
-        T[j].nm_bloc = j;
-        fwrite(&buffer, sizeof(buffer), 1, Ms->T[0]);
-    }
-
-
-
-/*
-int main(){
-    Ms Ms;
-
-    initialiserLaMs(&Ms);
-
-    produit p;
-    strcpy(p.age, "25");
-    strcpy(p.id, "100");
-    strcpy(p.name,"Ahmed");
-
-    memcpy(&Ms.T[0], &p, sizeof(produit));
-
-
-    for(int i=0; i<sizeof(bloc) ;i++){
-        memcpy(&Ms.T[i], &p, sizeof(produit));
-    }
-
-    for(int i=0; i<5 ;i++){
-        printf("Ms->T[%d] = %c\n",i,Ms.T[i]);
-    }
-
-
-
-
-    return 0;
-}int main() {
-    Ms Ms;
-
-    initialiserLaMs(&Ms);
-    produit p;
-
-    for (int i = 0; i < sizeof(bloc); i++) {
-        printf("Ms->T[%d] = %c\n", i, Ms.T[i]);
-    }
-
-
-    for(int i=0; i<5 ;i++) {
-
-        printf("Entrez le nom : ");
-        scanf(" %20s", p.name);
-
-
-        printf("Entrez l'�ge : ");
-        scanf(" %3s", p.age);
-
-
-        printf("Entrez l'ID : ");
-        scanf(" %10s", p.id);
-
-
-        memcpy(&Ms.T[i * sizeof(produit)], &p, sizeof(produit));
-    }
-
-
-    for (int i = 0; i < sizeof(bloc); i++) {
-        printf("Ms->T[%d] = %c\n", i, Ms.T[i]);
-    }
-
+    } while (choix != 14);
 
     return 0;
 }
 
 
-*/
+
+
+
+
