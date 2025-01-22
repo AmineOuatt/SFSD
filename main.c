@@ -347,6 +347,7 @@ void affichageEnBloc(Ms *ms) {
 
         if (fileName == NULL || blocPtr->nb_enregistrement == 0) {
             fileName = "Free";
+            blocPtr->nb_enregistrement = 0;
             color(10, 0);
         } else {
             color(12, 0);
@@ -871,7 +872,7 @@ void defragmenterBlocs(Ms *ms, const char *nomFichier) {
     int firstBlock = fileTable[fileIndex].adresse_firstblock;
     int orgGlobale = fileTable[fileIndex].org_globale;
 
-    produit produitPlaceholder = {"produit", 0.0, 0}; // Produit par défaut pour remplacer les vides
+    produit produitPlaceholder = {"produit", 0, 0}; // Produit par défaut pour remplacer les vides
 
     if (orgGlobale == 0) { // Organisation contiguë
         for (int blocCourant = firstBlock; blocCourant < firstBlock + fileTable[fileIndex].Taille_du_fichier; blocCourant++) {
@@ -925,71 +926,118 @@ void defragmenterBlocs(Ms *ms, const char *nomFichier) {
 
     printf("Défragmentation interne des blocs du fichier '%s' terminée.\n", nomFichier);
 }
-void compacterMs(Ms *ms, Tallocation *talloc) {
 
-    // Check if the memory structure pointer is NULL
+
+
+// Fonction de compactage
+void compacterMs(Ms *ms) {
     if (ms == NULL) {
         fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
         return;
     }
 
-    Bloc buffer; // Buffer to temporarily hold a single block
-    int writeIndex = 0; // Index for writing to the memory space
-    int readIndex = 0; // Index for reading from the memory space
+    Tallocation *talloc = (Tallocation *)ms->T;
+    Bloc buffer;
+    int writeIndex = 0;
 
-    int DF = 0;  // Index of the first free block
-    int FF = 0;  // Index of the last free block
-    int i = 0;   // General index for iteration
+    // Boucle pour parcourir tous les blocs
+    for (int readIndex = 0; readIndex < Total_block; readIndex++) {
+        // Si le bloc est occupé, le déplacer
+        if (talloc->T[readIndex].occupied) {
+            // Si writeIndex est différent de readIndex, déplacer le bloc
+            if (writeIndex != readIndex) {
+                memcpy(&buffer, &ms->T[sizeof(allocation) + sizeof(Bloc) * readIndex], sizeof(Bloc));
+                memcpy(&ms->T[sizeof(allocation) + sizeof(Bloc) * writeIndex], &buffer, sizeof(Bloc));
 
-    // Iterate through existing blocks until all blocks are processed
-    while (DF < Total_block || FF < Total_block) {
-        // Find the first free block
-        while (i < Total_block && talloc->T[i].occupied == true) {
-            i++; // Increment index until a free block is found
-        }
-        DF = i; // Set DF to the index of the first free block
-
-        // If all blocks are occupied, print a message and exit
-        if (i >= Total_block) {
-            printf("Tous les blocs sont occup�s\n");
-            return;
-        } else {
-            // Count the number of consecutive free blocks after DF
-            while (i < Total_block && talloc->T[i].occupied == false) {
-                i++; // Move to the next block
+                // Mettre à jour l'état d'occupation
+                updateTabAlloc(ms, writeIndex, true);
+                updateTabAlloc(ms, readIndex, false);
             }
-            // If there are no more occupied blocks, print a message and exit
-            if (i >= Total_block) {
-                printf("Pas d'autre bloc occup�\n");
-                return;
-            } else {
-                FF=i-1; // last free block count
-                // Set readIndex to the next block after the last free block
-                readIndex = FF + 1; // Start reading from the first block after FF
-                writeIndex = DF; // Start writing from the first free block
-
-                // Move all occupied blocks to the writeIndex position
-                while (readIndex < Total_block && talloc->T[readIndex].occupied == true) {
-                    // Read the current block into the buffer
-                    memcpy(&buffer, &ms->T[readIndex], sizeof(Bloc));  ////////////////////////////////////////////
-
-                    // Move the occupied block to the writeIndex position
-                    memcpy(&ms->T[writeIndex], &buffer, sizeof(Bloc));/////////////////////////////////////////////
-
-                    updateTabAlloc(ms , writeIndex, true); // Mark the new position as occupied
-                    updateTabAlloc(ms , readIndex, false); // Mark the old position as free
-
-                    writeIndex++; // Increment write index for the next write
-                    readIndex++;  // Increment read index to process the next block
-                }
-            }
+            writeIndex++;
         }
-        // Reset indices for the next iteration
-        DF = 0; // Reset DF for the next iteration
-        FF = 0; // Reset FF for the next iteration
-        i = 0;  // Reset i for the next iteration
     }
 }
+void suppfichiercntg(Ms *ms, int P) {
+    Tallocation *talloc = (Tallocation *)ms->T;
+
+    // Access metadata for the file to be deleted
+    mt *metainfo = (mt *)(ms->meta + P * sizeof(mt));
+    int nb_blocks_to_delete = ceil((double)metainfo->Taille_du_fichier / Facteur_block);
+    int current_block = metainfo->adresse_firstblock;
+
+    // Mark blocks as free in the allocation table
+    for (int i = 0; i < nb_blocks_to_delete; i++) {
+        if (current_block < Total_block) {
+            talloc->T[current_block].occupied = false;
+            talloc->T[current_block].nm_bloc = 0;
+            current_block++;
+        }
+    }
+
+    // Update metadata to reflect deletion
+    metainfo->etat = 0; // Mark file as deleted
+    metainfo->adresse_firstblock = -1;
+    strcpy(metainfo->Nom_du_fichier, "");
+    metainfo->Taille_du_fichier = 0;
+    metainfo->nb_enregistrement = 0;
+
+    // Compact memory system
+    compacterMs(ms);
+}
+
+void suppfichierchaine(Ms *ms, int P) {
+    Tallocation *talloc = (Tallocation *)ms->T;
+    Bloc buffer;
+
+    // Access metadata for the file to be deleted
+    mt *metainfo = (mt *)(ms->meta + P * sizeof(mt));
+    int current_block = metainfo->adresse_firstblock;
+
+    // Mark blocks as free in the allocation table
+    while (current_block != -1 && current_block < Total_block) {
+        talloc->T[current_block].occupied = false;
+        talloc->T[current_block].nm_bloc = 0;
+
+        // Move to the next block
+        memcpy(&buffer, &ms->T[sizeof(Tallocation) + sizeof(Bloc) * current_block], sizeof(Bloc));
+        current_block = buffer.next;
+    }
+
+    // Update metadata to reflect deletion
+    metainfo->etat = 0; // Mark file as deleted
+    metainfo->adresse_firstblock = -1;
+    strcpy(metainfo->Nom_du_fichier, "");
+    metainfo->Taille_du_fichier = 0;
+    metainfo->nb_enregistrement = 0;
+
+    // Compact memory system
+    compacterMs(ms);
+}
+
+void suppfichier(Ms *ms, int P) {
+    if (ms == NULL) {
+        fprintf(stderr, "Erreur : Le pointeur Ms est NULL.\n");
+        return;
+    }
+
+    // Read metadata for the file to be deleted
+    mt metainfo;
+    memcpy(&metainfo, ms->meta + P * sizeof(mt), sizeof(mt));
+
+    if (metainfo.etat == 0) {
+        fprintf(stderr, "Erreur : Le fichier sélectionné n'existe pas.\n");
+        return;
+    }
+
+    // Call the appropriate deletion method based on global organization
+    if (metainfo.org_globale == 0) { // Contiguous organization
+        suppfichiercntg(ms, P);
+    } else { // Chained organization
+        suppfichierchaine(ms, P);
+    }
+}
+
+
 void renameFile(Ms *ms, const char currentName) {
     // Get the file metadata
     mt *fileTable = (mt*)ms->meta;
@@ -1026,60 +1074,7 @@ void renameFile(Ms *ms, const char currentName) {
 
     printf("Le fichier '%s' a été renommé en '%s'.\n", currentName, newName);
 }
-void suppfichiercntg(Ms *ms , Tallocation *talloc , int p) { //addr firstblock and nb erg from met
 
-    mt *metainfo = (mt*)ms->meta;
-    int nb_reg = metainfo[p].nb_enregistrement;
-    int addr_block = metainfo[p].adresse_firstblock;
-
-    int block_to_delete = ceil((double)nb_reg / Facteur_block);
-    int i = 0;
-    while(i<block_to_delete){
-        updateTabAlloc(ms , addr_block, false);
-        addr_block = addr_block + 1;
-        i++;
-    }
-    compacterMs(ms, talloc);
-    for(int i=p;i<ms->file_count;i++){
-        metainfo[i] = metainfo[i+1];
-    }
-    memcpy(ms->meta, metainfo, sizeof(mt) * Total_block);
-}
-
-void suppfichierchaine(Ms *ms , Tallocation *talloc ,int p) {
-
-    mt *metainfo = (mt*)ms->meta;
-
-    int nb_reg = metainfo[p].adresse_firstblock;
-    int addr_block = metainfo->adresse_firstblock;
-    Bloc buffer ;
-    int block_to_delete = ceil((double)nb_reg / Facteur_block);
-    int i = 0;
-   while(i<block_to_delete){
-        updateTabAlloc(ms , addr_block, false);
-        memcpy(&buffer, &ms->T[addr_block], sizeof(Bloc)); //////////////////////////////////////////////
-        addr_block = buffer.next;
-        i++;
-    }
-    compacterMs(ms, talloc);
-    for(int i=p;i<ms->file_count;i++){
-        metainfo[i] = metainfo[i+1];
-    }
-    memcpy(ms->meta, metainfo, sizeof(mt) * Total_block);
-}
-
-void suppfichier(Ms *ms , Tallocation *talloc , int p) {
-    mt *metainfo = (mt*)ms->meta;
-    bool choix = metainfo->org_globale ;
-
-    if(choix ==true){
-        suppfichiercntg(ms, talloc, p);
-    }
-    else{
-        suppfichierchaine(ms, talloc,p);
-    }
-
-}
 
 void afficherElementsbuffer(Bloc buffer){
         for (int j = 0; j < 4; j++) {
@@ -1209,9 +1204,11 @@ int main(){
                 break;
             case 9: // Delete a file
 
-                printf("Entrez la position de fichier : ");
-                scanf("%d", pos);
-                suppfichier(&ms,&allocation,pos); // Pass valid pointers
+                afficherMETAMs(&ms);
+                printf("Entrez la position de fichier a supprimer : ");
+                scanf("%d", &idRecherche);
+               // suppfichier(&ms, idRecherche); // Update the parameters as neede
+               suppfichiercntg(&ms,idRecherche);
                 break;
 
             case 10: // Rename a file
@@ -1220,7 +1217,7 @@ int main(){
                 renameFile(&ms, nomFichier);
                 break;
             case 11: // Compact secondary memory
-                compacterMs(&ms, &allocation); // Pass a valid Tallocation pointer
+                compacterMs(&ms); // Pass a valid Tallocation pointer
                 break;
             case 12: // Clear secondary memory
                 initialisems(&ms);
@@ -1241,4 +1238,3 @@ int main(){
     return 0;
 
 }
- 
