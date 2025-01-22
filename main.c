@@ -90,7 +90,7 @@ void initialisebuffer(Bloc *buffer , int index){
     for(int i = 0 ; i<4 ; i++){
     buffer->enregisrement[i].id = 0;
     buffer->enregisrement[i].price = 0.0;
-    strcpy(buffer->enregisrement[i].name,"a");
+    strcpy(buffer->enregisrement[i].name,"0");
     }
     buffer->next = -1;
 }
@@ -830,8 +830,8 @@ void supprimerPhysiquement(Ms *ms, int idRecherche, const char *nomFichier) {
     memcpy(ms->T + sizeof(Tallocation) + resultat.bloc * sizeof(Bloc), &buffer, sizeof(Bloc));
 
     if (buffer.nb_enregistrement == 0) {
-        modifierTableAllocation(ms, resultat.bloc, false);
-        
+        updateTabAlloc(ms, resultat.bloc, false);
+
         if (globaleChainee) {
             int previousBlocIndex = getPreviousBlockIndex(ms, resultat.bloc);
 
@@ -851,69 +851,79 @@ void supprimerPhysiquement(Ms *ms, int idRecherche, const char *nomFichier) {
 
     printf("Enregistrement avec ID %d dans le fichier '%s' supprimé physiquement.\n", idRecherche, nomFichier);
 }
-void defragmenterFichier(Ms *ms, const char *nom_fichier) {
-    if (ms == NULL || nom_fichier == NULL) {
-        fprintf(stderr, "Erreur : Le pointeur Ms ou le nom du fichier est NULL.\n");
-        return;
-    }
+void defragmenterBlocs(Ms *ms, const char *nomFichier) {
+    mt *fileTable = (mt *)ms->meta;
 
-    Tallocation tallocation;
-    memcpy(&tallocation, ms->T, sizeof(Tallocation));
-
-    // Locate metadata for the file
-    mt meta;
-    int meta_index = -1;
-    for (int i = 0; i < Total_block; i++) {
-        memcpy(&meta, ms->meta + i * sizeof(mt), sizeof(mt));
-        if (strcmp(meta.Nom_du_fichier, nom_fichier) == 0 && meta.etat == 1) {
-            meta_index = i;
+    // Trouver le fichier dans la table des métadonnées
+    int fileIndex = -1;
+    for (int i = 0; i < ms->file_count; i++) {
+        if (strcmp(fileTable[i].Nom_du_fichier, nomFichier) == 0 && fileTable[i].etat == 1) {
+            fileIndex = i;
             break;
         }
     }
 
-    if (meta_index == -1) {
-        fprintf(stderr, "Erreur : Fichier '%s' introuvable.\n", nom_fichier);
+    if (fileIndex == -1) {
+        printf("Fichier '%s' introuvable.\n", nomFichier);
         return;
     }
 
-    Bloc defrag_blocks[Total_block];
-    int defrag_count = 0;
+    int firstBlock = fileTable[fileIndex].adresse_firstblock;
+    int orgGlobale = fileTable[fileIndex].org_globale;
 
-    // Traverse all blocks in the linked list of the file
-    int current_block = meta.adresse_firstblock;
-    while (current_block != -1) {
-        Bloc bloc;
-        memcpy(&bloc, ms->T + sizeof(Tallocation) + current_block * sizeof(Bloc), sizeof(Bloc));
-        defrag_blocks[defrag_count++] = bloc;
-        updateTabAlloc(ms, current_block, false); // Mark the block as unallocated
-        current_block = bloc.next;
+    produit produitPlaceholder = {"produit", 0.0, 0}; // Produit par défaut pour remplacer les vides
+
+    if (orgGlobale == 0) { // Organisation contiguë
+        for (int blocCourant = firstBlock; blocCourant < firstBlock + fileTable[fileIndex].Taille_du_fichier; blocCourant++) {
+            Bloc bloc;
+            memcpy(&bloc, ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), sizeof(Bloc));
+
+            // Défragmenter les enregistrements dans le bloc
+            int indexRemplissage = 0; // Indice où copier les enregistrements non supprimés
+            for (int i = 0; i < bloc.nb_enregistrement; i++) {
+                if (bloc.enregisrement[i].name[0] != '*') { // Vérifie si l'enregistrement est valide
+                    bloc.enregisrement[indexRemplissage++] = bloc.enregisrement[i];
+                }
+            }
+
+            // Remplir les espaces restants avec le produit placeholder
+            for (int i = indexRemplissage; i < Facteur_block; i++) {
+                bloc.enregisrement[i] = produitPlaceholder;
+            }
+            bloc.nb_enregistrement = indexRemplissage; // Met à jour le nombre réel d'enregistrements
+
+            // Écrire le bloc défragmenté en mémoire secondaire
+            memcpy(ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), &bloc, sizeof(Bloc));
+        }
+    } else { // Organisation chaînée
+        int blocCourant = firstBlock;
+        while (blocCourant != -1) {
+            Bloc bloc;
+            memcpy(&bloc, ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), sizeof(Bloc));
+
+            // Défragmenter les enregistrements dans le bloc
+            int indexRemplissage = 0; // Indice où copier les enregistrements non supprimés
+            for (int i = 0; i < bloc.nb_enregistrement; i++) {
+                if (bloc.enregisrement[i].name[0] != '*') { // Vérifie si l'enregistrement est valide
+                    bloc.enregisrement[indexRemplissage++] = bloc.enregisrement[i];
+                }
+            }
+
+            // Remplir les espaces restants avec le produit placeholder
+            for (int i = indexRemplissage; i < Facteur_block; i++) {
+                bloc.enregisrement[i] = produitPlaceholder;
+            }
+            bloc.nb_enregistrement = indexRemplissage; // Met à jour le nombre réel d'enregistrements
+
+            // Écrire le bloc défragmenté en mémoire secondaire
+            memcpy(ms->T + sizeof(Tallocation) + blocCourant * sizeof(Bloc), &bloc, sizeof(Bloc));
+
+            // Passer au bloc suivant
+            blocCourant = bloc.next;
+        }
     }
 
-    // Allocate new blocks contiguously
-    int new_first_block = getFreeBlocPos(ms);
-    if (new_first_block == -1 || new_first_block + defrag_count > Total_block) {
-        fprintf(stderr, "Erreur : Pas assez d'espace pour défragmenter le fichier '%s'.\n", nom_fichier);
-        return;
-    }
-
-    for (int i = 0; i < defrag_count; i++) {
-        Bloc bloc = defrag_blocks[i];
-        int block_pos = new_first_block + i;
-
-        bloc.ADR = block_pos;
-        bloc.next = (i == defrag_count - 1) ? -1 : (block_pos + 1);
-
-        memcpy(ms->T + sizeof(Tallocation) + block_pos * sizeof(Bloc), &bloc, sizeof(Bloc));
-        updateTabAlloc(ms, block_pos, true);
-    }
-
-    // Update metadata
-    meta.adresse_firstblock = new_first_block;
-    meta.Taille_du_fichier = defrag_count;
-    memcpy(ms->meta + meta_index * sizeof(mt), &meta, sizeof(mt));
-
-    printf("Défragmentation terminée pour le fichier '%s'.\n", nom_fichier);
-    displayTallocation(tallocation); // Display updated allocation table
+    printf("Défragmentation interne des blocs du fichier '%s' terminée.\n", nomFichier);
 }
 void compacterMs(Ms *ms, Tallocation *talloc) {
 
@@ -1016,10 +1026,11 @@ void renameFile(Ms *ms, const char currentName) {
 
     printf("Le fichier '%s' a été renommé en '%s'.\n", currentName, newName);
 }
-void suppfichiercntg(Ms *ms , Tallocation *talloc , mt *metainfo) { //addr firstblock and nb erg from met
+void suppfichiercntg(Ms *ms , Tallocation *talloc , int p) { //addr firstblock and nb erg from met
 
-    int nb_reg = metainfo->nb_enregistrement;
-    int addr_block = metainfo->adresse_firstblock;
+    mt *metainfo = (mt*)ms->meta;
+    int nb_reg = metainfo[p].nb_enregistrement;
+    int addr_block = metainfo[p].adresse_firstblock;
 
     int block_to_delete = ceil((double)nb_reg / Facteur_block);
     int i = 0;
@@ -1029,10 +1040,17 @@ void suppfichiercntg(Ms *ms , Tallocation *talloc , mt *metainfo) { //addr first
         i++;
     }
     compacterMs(ms, talloc);
+    for(int i=p;i<ms->file_count;i++){
+        metainfo[i] = metainfo[i+1];
+    }
+    memcpy(ms->meta, metainfo, sizeof(mt) * Total_block);
 }
-void suppfichierchaine(Ms *ms , Tallocation *talloc , mt *metainfo) {
 
-    int nb_reg = metainfo->nb_enregistrement;
+void suppfichierchaine(Ms *ms , Tallocation *talloc ,int p) {
+
+    mt *metainfo = (mt*)ms->meta;
+
+    int nb_reg = metainfo[p].adresse_firstblock;
     int addr_block = metainfo->adresse_firstblock;
     Bloc buffer ;
     int block_to_delete = ceil((double)nb_reg / Facteur_block);
@@ -1044,16 +1062,21 @@ void suppfichierchaine(Ms *ms , Tallocation *talloc , mt *metainfo) {
         i++;
     }
     compacterMs(ms, talloc);
+    for(int i=p;i<ms->file_count;i++){
+        metainfo[i] = metainfo[i+1];
+    }
+    memcpy(ms->meta, metainfo, sizeof(mt) * Total_block);
 }
-void suppfichier(Ms *ms , Tallocation *talloc , mt *metainfo ){
 
+void suppfichier(Ms *ms , Tallocation *talloc , int p) {
+    mt *metainfo = (mt*)ms->meta;
     bool choix = metainfo->org_globale ;
 
     if(choix ==true){
-        suppfichiercntg(ms, talloc, metainfo);
+        suppfichiercntg(ms, talloc, p);
     }
     else{
-        suppfichierchaine(ms, talloc, metainfo);
+        suppfichierchaine(ms, talloc,p);
     }
 
 }
@@ -1083,9 +1106,9 @@ void afficherElementsMs(Ms *ms) {
     }
 }
 void afficherMETAMs(Ms *ms) {
-    printf("Affichage des meta dans la memoire secondaire (les 4 premiers):\n");
+    printf("Affichage des meta dans la memoire secondaire :\n");
     mt meta;
-    for(int i=0 ; i<4 ; i++){
+    for(int i=0 ; i<ms->file_count ; i++){
         memcpy(&meta , ms->meta + i*sizeof(mt),sizeof(mt));
         printf("Nom du fichier:             %s\n", meta.Nom_du_fichier);
         printf("Taille du fichier:          %d\n", meta.Taille_du_fichier);
@@ -1099,100 +1122,114 @@ void afficherMETAMs(Ms *ms) {
     printf("ms->T file count = %d \n" , ms->file_count);
 }
 
+
+
+
 // Include all the function declarations and type definitions from the provided code...
 void displayMenu() {
     printf("\n=== MENU PRINCIPAL ===\n");
-    printf("1. Initialiser la mémoire secondaire\n");
-    printf("2. Créer un fichier\n");
-    printf("3. Afficher l'état de la mémoire secondaire\n");
-    printf("4. Afficher les métadonnées des fichiers\n");
-    printf("5. Rechercher un enregistrement par ID\n");
-    printf("6. Insérer un nouvel enregistrement\n");
-    printf("7. Supprimer un enregistrement (logique)\n");
-    printf("8. Supprimer un enregistrement (physique)\n");
-    printf("9. Défragmenter un fichier\n");
-    printf("10. Supprimer un fichier\n");
-    printf("11. Renommer un fichier\n");
-    printf("12. Compactage de la mémoire secondaire\n");
-    printf("13. Vider la mémoire secondaire\n");
+    printf("1. Creer un fichier\n");
+    printf("2. Afficher l'etat de la meoire secondaire\n");
+    printf("3. Afficher les metadonnées des fichiers\n");
+    printf("4. Rechercher un enregistrement par ID\n");
+    printf("5. Inserer un nouvel enregistrement\n");
+    printf("6. Supprimer un enregistrement (logique)\n");
+    printf("7. Supprimer un enregistrement (physique)\n");
+    printf("8. Defragmenter un fichier\n");
+    printf("9. Supprimer un fichier\n");
+    printf("10. Renommer un fichier\n");
+    printf("11. Compactage de la memoire secondaire\n");
+    printf("12. Vider la memoire secondaire\n");
+    printf("13. Affichier les elemants de MS\n");
     printf("14. Quitter\n");
     printf("Choisissez une option : ");
 }
 
-int main() {
+int main(){
     Ms ms;
+    int pos;
     int choix;
     char nomFichier[30];
     int idRecherche;
     produit p;
-
+    Tallocation allocation; // Assuming Tallocation is a valid type
+    initialisems(&ms); // Initialize secondary memory at the start
+    printf("Memoire secondaire initialisee.\n\n===============\n");
 
     do {
         displayMenu();
+        printf("Entrez votre choix: ");
         scanf("%d", &choix);
 
         switch (choix) {
-            case 1:
-                initialisems(&ms);
-                printf("Mémoire secondaire initialisée.\n");
-                break;
-            case 2:
+
+            case 1: // Create a file
                 creationfichier(&ms);
                 break;
-            case 3:
+            case 2: // Display memory state
                 affichageEnBloc(&ms);
                 break;
-            case 4:
+            case 3: // Display file metadata
                 afficherMETAMs(&ms);
                 break;
-            case 5:
+            case 4: // Search for a record by ID
                 printf("Entrez le nom du fichier : ");
                 scanf("%s", nomFichier);
                 printf("Entrez l'ID à rechercher : ");
                 scanf("%d", &idRecherche);
-                rechercherParIDAvecBuffer(&ms, idRecherche, nomFichier);
+                ResultatRecherche resultat = rechercherParIDAvecBuffer(&ms, idRecherche, nomFichier);
+                if (resultat.trouve) {
+                    printf("Enregistrement trouvé dans le bloc %d, position %d.\n", resultat.bloc, resultat.position);
+                } else {
+                    printf("Enregistrement non trouvé.\n");
+                }
                 break;
-            case 6:
+            case 5: // Insert a new record
                 p = lireProduit();
                 insertion(&ms, p);
                 break;
-            case 7:
+            case 6: // Logical deletion of a record
                 printf("Entrez le nom du fichier : ");
                 scanf("%s", nomFichier);
                 printf("Entrez l'ID à supprimer : ");
                 scanf("%d", &idRecherche);
                 supprimerLogiquement(&ms, idRecherche, nomFichier);
                 break;
-            case 8:
+            case 7: // Physical deletion of a record
                 printf("Entrez le nom du fichier : ");
                 scanf("%s", nomFichier);
                 printf("Entrez l'ID à supprimer : ");
                 scanf("%d", &idRecherche);
                 supprimerPhysiquement(&ms, idRecherche, nomFichier);
                 break;
-            case 9:
+            case 8: // Defragment a file
                 printf("Entrez le nom du fichier à défragmenter : ");
                 scanf("%s", nomFichier);
-                defragmenterFichier(&ms, nomFichier);
+                defragmenterBlocs(&ms, nomFichier);
                 break;
-            case 10:
-                printf("Entrez le nom du fichier à supprimer : ");
-                scanf("%s", nomFichier);
-                suppfichier(&ms, NULL, NULL); // Update the parameters as needed
+            case 9: // Delete a file
+
+                printf("Entrez la position de fichier : ");
+                scanf("%d", pos);
+                suppfichier(&ms,&allocation,pos); // Pass valid pointers
                 break;
-            case 11:
+
+            case 10: // Rename a file
                 printf("Entrez le nom actuel du fichier : ");
                 scanf("%s", nomFichier);
                 renameFile(&ms, nomFichier);
                 break;
-            case 12:
-                compacterMs(&ms, NULL); // Update the second parameter as needed
+            case 11: // Compact secondary memory
+                compacterMs(&ms, &allocation); // Pass a valid Tallocation pointer
                 break;
-            case 13:
+            case 12: // Clear secondary memory
                 initialisems(&ms);
                 printf("Mémoire secondaire vidée.\n");
                 break;
-            case 14:
+            case 13: // Display all elements
+                afficherElementsMs(&ms);
+                break;
+            case 14: // Quit
                 printf("Quitter le programme.\n");
                 break;
             default:
@@ -1202,10 +1239,6 @@ int main() {
     } while (choix != 14);
 
     return 0;
+
 }
-
-
-
-
-
-
+ 
